@@ -1,0 +1,37 @@
+# Stack `ia-travel`. Convive con otro proyecto (p. ej. eurega_rag) así:
+# - Ollama: por defecto NO se levanta aquí (perfil `bundled-ollama`). Reutiliza
+#   el contenedor `eurega_rag_ollama` en :11434 y OLLAMA_BASE_URL=http://localhost:11434/v1
+# - Postgres: host :15432 → evita choque con :5432/:5433. Si reutilizas el
+#   Postgres de eurega_rag, no levantes `ia_travel_postgres` y usa DATABASE_URL allí.
+name: ia-travel
+
+services:
+  ia_travel_ollama:
+    container_name: ia-travel-ollama
+    image: ollama/ollama
+    profiles:
+      - bundled-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  ia_travel_postgres:
+    container_name: ia-travel-postgres
+    image: pgvector/pgvector:0.7.4-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_travel_agent
+      POSTGRES_USER: travel
+      POSTGRES_PASSWORD: travel_dev
+    ports:
+      # Host 15432 (evita 5432/5433 a menudo ocupados). Cambia si sigue en conflicto.
+      - "15432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./databases:/docker-entrypoint-initdb.d
+
+volumes:
+  ollama_data:
+  pg_data:

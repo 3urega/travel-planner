@@ -18,8 +18,10 @@
         "name": "next"
       }
     ],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [
