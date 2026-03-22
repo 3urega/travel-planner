@@ -27,4 +27,7 @@ export type ATOResponse = {
   executedSteps: Array<{ stepId: string; result: unknown }>;
   auditEvents: AuditEvent[];
   summary: string;
+  /** ADG (Hito 1): grafo persistido tras generar el plan; ausente si falló la escritura. */
+  adgGraphId?: string;
+  adgGraphVersionId?: string;
 };

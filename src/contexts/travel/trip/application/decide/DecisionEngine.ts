@@ -7,6 +7,7 @@ import type {
   DecisionWeights,
   ScoredOption,
 } from "../../domain/DecisionRecord";
+import type { ResolvedUserTravelPreferences } from "../../domain/UserTravelPreferences";
 
 const DEFAULT_WEIGHTS: DecisionWeights = { price: 0.6, comfort: 0.4 };
 
@@ -33,18 +34,33 @@ export class DecisionEngine {
     sessionId: string,
     category: string,
     options: RawOption[],
-    weights: DecisionWeights = DEFAULT_WEIGHTS,
+    prefs?: ResolvedUserTravelPreferences,
   ): DecisionRecord {
-    if (options.length === 0) {
+    const weights = prefs?.weights ?? DEFAULT_WEIGHTS;
+    let working = options;
+    let budgetRelaxed = false;
+
+    if (prefs?.maxPriceUsd !== undefined && options.length > 0) {
+      const maxP = prefs.maxPriceUsd;
+      const under = options.filter((o) => o.price <= maxP);
+      if (under.length > 0) {
+        working = under;
+      } else {
+        working = options;
+        budgetRelaxed = true;
+      }
+    }
+
+    if (working.length === 0) {
       return this.emptyRecord(sessionId, category, weights);
     }
 
-    const prices = options.map((o) => o.price);
+    const prices = working.map((o) => o.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const priceRange = maxPrice - minPrice || 1;
 
-    const scored: ScoredOption[] = options.map((opt) => {
+    const scored: ScoredOption[] = working.map((opt) => {
       const priceScore = 1 - (opt.price - minPrice) / priceRange;
       const comfortScore = Math.max(0, Math.min(1, opt.comfortProxy));
       const totalScore =
@@ -67,11 +83,16 @@ export class DecisionEngine {
     const chosen = scored[0];
     chosen.chosen = true;
 
+    const budgetNote = budgetRelaxed
+      ? ` Ninguna opción cumple el presupuesto máximo (${prefs?.maxPriceUsd} USD); se consideraron todas.`
+      : "";
+
     const justification =
       `Se eligió "${chosen.label}" (score: ${chosen.totalScore}). ` +
       `Precio: ${chosen.priceScore} × ${weights.price} | ` +
       `Confort: ${chosen.comfortScore} × ${weights.comfort}. ` +
-      `Ponderación: precio ${Math.round(weights.price * 100)}% / confort ${Math.round(weights.comfort * 100)}%.`;
+      `Ponderación: precio ${Math.round(weights.price * 100)}% / confort ${Math.round(weights.comfort * 100)}%.` +
+      budgetNote;
 
     return {
       id: crypto.randomUUID(),

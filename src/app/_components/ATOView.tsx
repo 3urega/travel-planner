@@ -198,6 +198,11 @@ function DecisionsSection({
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
         Decisiones automáticas (scoring)
       </h2>
+      <p className="mb-3 text-xs text-zinc-500">
+        Ajusta presupuesto máximo y balance precio/confort antes de ejecutar. Tras la primera respuesta,
+        al volver a ejecutar se reutiliza el mismo <code className="text-zinc-600">sessionId</code> en
+        servidor (preferencias fusionadas); el plan se genera de nuevo con el LLM.
+      </p>
       <div className="space-y-4">
         {decisions.map((d) => (
           <DecisionCard key={d.id} decision={d} />
@@ -212,7 +217,7 @@ function DecisionCard({
 }: {
   decision: DecisionRecord;
 }): React.ReactElement {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
@@ -221,10 +226,11 @@ function DecisionCard({
           {decision.category === "flight" ? "✈️ Vuelo" : "🏨 Hotel"}
         </span>
         <button
+          type="button"
           onClick={() => setOpen((o) => !o)}
           className="text-xs text-blue-600 hover:underline"
         >
-          {open ? "Ocultar ranking" : "Ver ranking completo"}
+          {open ? "Ocultar alternativas" : "Ver todas las alternativas"}
         </button>
       </div>
       <p className="mt-1 text-xs text-zinc-500">{decision.justification}</p>
@@ -318,6 +324,11 @@ export function ATOView(): React.ReactElement {
   const [status, setStatus] = useState<Status>("idle");
   const [response, setResponse] = useState<ATOResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  /** Reenvío a /api/agent para fusionar preferencias en la misma sesión. */
+  const [sessionIdForNext, setSessionIdForNext] = useState<string | null>(null);
+  /** 0 = priorizar precio, 100 = priorizar confort (mapea a pesos 1−v/100 y v/100). */
+  const [priceComfortSlider, setPriceComfortSlider] = useState(40);
+  const [maxPriceUsd, setMaxPriceUsd] = useState("");
 
   const submit = async (): Promise<void> => {
     if (!message.trim() || status === "loading") return;
@@ -325,11 +336,24 @@ export function ATOView(): React.ReactElement {
     setResponse(null);
     setErrorMsg("");
 
+    const v = priceComfortSlider;
+    const priceWeight = 1 - v / 100;
+    const comfortWeight = v / 100;
+    const maxParsed = maxPriceUsd.trim() === "" ? undefined : Number(maxPriceUsd);
+    const preferences =
+      maxParsed !== undefined && Number.isFinite(maxParsed) && maxParsed > 0
+        ? { maxPriceUsd: maxParsed, priceWeight, comfortWeight }
+        : { priceWeight, comfortWeight };
+
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          ...(sessionIdForNext ? { sessionId: sessionIdForNext } : {}),
+          preferences,
+        }),
       });
 
       if (!res.ok) {
@@ -339,6 +363,7 @@ export function ATOView(): React.ReactElement {
 
       const data = (await res.json()) as ATOResponse;
       setResponse(data);
+      setSessionIdForNext(data.sessionId);
       setStatus("done");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Error desconocido");
@@ -374,6 +399,58 @@ export function ATOView(): React.ReactElement {
           placeholder='Ej: "Viaje a Tokio 10 días en abril, presupuesto medio, desde Madrid"'
           className="w-full resize-none rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 placeholder:text-zinc-400"
         />
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 space-y-3">
+          <p className="text-xs font-semibold text-zinc-600">
+            Preferencias para esta ejecución
+          </p>
+          <label className="block text-xs text-zinc-600">
+            Presupuesto máximo (USD, opcional)
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={maxPriceUsd}
+              onChange={(e) => setMaxPriceUsd(e.target.value)}
+              placeholder="ej. 500"
+              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+            />
+          </label>
+          <div>
+            <div className="flex justify-between text-xs text-zinc-500 mb-1">
+              <span>Priorizar precio</span>
+              <span>Priorizar confort</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={priceComfortSlider}
+              onChange={(e) => setPriceComfortSlider(Number(e.target.value))}
+              className="w-full accent-blue-600"
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              Pesos: precio {Math.round((1 - priceComfortSlider / 100) * 100)}% · confort{" "}
+              {Math.round((priceComfortSlider / 100) * 100)}%
+            </p>
+          </div>
+          {sessionIdForNext && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-zinc-500 truncate font-mono">
+                Sesión: {sessionIdForNext.slice(0, 8)}…
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionIdForNext(null);
+                  setResponse(null);
+                }}
+                className="text-xs text-blue-600 hover:underline shrink-0"
+              >
+                Nueva sesión
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center justify-between">
           <span className="text-xs text-zinc-400">⌘ + Enter para enviar</span>
           <button
@@ -412,6 +489,13 @@ export function ATOView(): React.ReactElement {
           <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
             {response.summary}
           </div>
+
+          {(response.adgGraphId ?? response.adgGraphVersionId) && (
+            <p className="text-xs text-zinc-500 font-mono">
+              ADG: graph={response.adgGraphId ?? "—"} · versión=
+              {response.adgGraphVersionId ?? "—"}
+            </p>
+          )}
 
           {/* Plan */}
           <PlanSection plan={response.plan} />
