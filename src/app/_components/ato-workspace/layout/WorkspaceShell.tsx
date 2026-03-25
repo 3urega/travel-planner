@@ -4,12 +4,15 @@ import { cn } from "@/lib/utils";
 
 export function WorkspaceShell({
   header,
+  belowHeader,
   sidebar,
   center,
   inspector,
   className,
 }: {
   header: React.ReactNode;
+  /** Carril de progreso u otros controles a ancho completo bajo el header */
+  belowHeader?: React.ReactNode;
   sidebar: React.ReactNode;
   center: React.ReactNode;
   inspector: React.ReactNode;
@@ -53,6 +56,12 @@ export function WorkspaceShell({
       </div>
 
       {header}
+
+      {belowHeader !== undefined && belowHeader !== null && (
+        <div className="relative z-20 border-b border-border/60 bg-background/90 px-4 py-3 lg:px-10">
+          <div className="mx-auto max-w-[1680px]">{belowHeader}</div>
+        </div>
+      )}
 
       <div className="relative mx-auto grid w-full max-w-[1680px] flex-1 grid-cols-1 gap-8 px-4 pb-16 pt-8 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)_minmax(240px,280px)] lg:gap-10 lg:px-10">
         <aside className="order-2 flex min-h-0 flex-col gap-5 lg:order-1 lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto lg:pt-1">

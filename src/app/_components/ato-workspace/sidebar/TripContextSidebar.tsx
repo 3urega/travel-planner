@@ -9,9 +9,24 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
-import type { StageRow } from "../adapters";
+import { findDecisionForCategory } from "../workflow/deriveWorkflowState";
+import type { WorkspaceWorkflowState } from "../workflow/types";
+import { WORKSPACE_STAGES, stageIndex } from "../workflow/types";
 
-function StageDot({ state }: { state: StageRow["state"] }): React.ReactElement {
+const STAGE_LABELS: Record<string, string> = {
+  define_trip: "Definir viaje",
+  select_flight: "Elegir vuelo",
+  select_hotel: "Elegir hotel",
+  review_trip: "Revisar viaje",
+  approve: "Aprobar",
+  execute_ready: "Operar",
+};
+
+function StageDot({
+  state,
+}: {
+  state: "locked" | "waiting" | "active" | "completed";
+}): React.ReactElement {
   const styles = {
     locked: "bg-muted border-border",
     waiting:
@@ -31,16 +46,28 @@ function StageDot({ state }: { state: StageRow["state"] }): React.ReactElement {
   );
 }
 
+function chosenLabel(
+  response: ATOResponse | null,
+  kind: "flight" | "hotel",
+): string {
+  if (!response) return "—";
+  const d = findDecisionForCategory(response.decisions, kind);
+  if (!d) return "Pendiente";
+  const id = d.userChosenId ?? d.chosenId;
+  const o = d.options.find((x) => x.id === id);
+  return o?.label ?? "Elegido";
+}
+
 export function TripContextSidebar({
   response,
-  stages,
+  workflow,
   priceComfortSlider,
   onPriceComfortChange,
   maxPriceUsd,
   onMaxPriceChange,
 }: {
   response: ATOResponse | null;
-  stages: StageRow[];
+  workflow: WorkspaceWorkflowState;
   priceComfortSlider: number;
   onPriceComfortChange: (v: number) => void;
   maxPriceUsd: string;
@@ -49,6 +76,19 @@ export function TripContextSidebar({
   const goal =
     response?.plan.goal ??
     "Cuando envíes tu primer briefing, aquí guardaremos la esencia del viaje — no solo fechas, sino el tono que buscas.";
+
+  const curIdx = stageIndex(workflow.currentStage);
+  const productStageRows = WORKSPACE_STAGES.map((id) => {
+    const i = stageIndex(id);
+    let state: "locked" | "waiting" | "active" | "completed";
+    if (i < curIdx) state = "completed";
+    else if (i === curIdx) state = "active";
+    else state = "locked";
+    if (id === "approve" && workflow.requiresApproval && state === "active") {
+      state = "waiting";
+    }
+    return { id, label: STAGE_LABELS[id] ?? id, state };
+  });
 
   return (
     <div className="flex flex-col gap-5">
@@ -61,7 +101,7 @@ export function TripContextSidebar({
         <CardHeader className="pb-2">
           <span className="ato-kicker mb-1">Esencia</span>
           <CardTitle className="font-ato-display normal-case tracking-normal text-lg font-medium text-foreground">
-            Lo que estamos protegiendo
+            Objetivo del viaje
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -73,9 +113,50 @@ export function TripContextSidebar({
 
       <div className="ato-noise ato-glass rounded-2xl">
         <CardHeader className="pb-2">
+          <span className="ato-kicker mb-1">Selección</span>
+          <CardTitle className="font-ato-display normal-case tracking-normal text-lg font-medium text-foreground">
+            Qué llevas cerrado
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Vuelo
+            </p>
+            <p
+              className={cn(
+                "mt-0.5",
+                workflow.selectedFlightId
+                  ? "text-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
+              {chosenLabel(response, "flight")}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Hotel
+            </p>
+            <p
+              className={cn(
+                "mt-0.5",
+                workflow.selectedHotelId
+                  ? "text-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
+              {chosenLabel(response, "hotel")}
+            </p>
+          </div>
+        </CardContent>
+      </div>
+
+      <div className="ato-noise ato-glass rounded-2xl">
+        <CardHeader className="pb-2">
           <span className="ato-kicker mb-1">Equilibrio</span>
           <CardTitle className="font-ato-display normal-case tracking-normal text-lg font-medium text-foreground">
-            Cómo pesamos precio y confort
+            Presupuesto y confort
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -111,14 +192,14 @@ export function TripContextSidebar({
 
       <div className="ato-noise ato-glass rounded-2xl">
         <CardHeader className="pb-2">
-          <span className="ato-kicker mb-1">Ritmo</span>
+          <span className="ato-kicker mb-1">Progreso</span>
           <CardTitle className="font-ato-display normal-case tracking-normal text-lg font-medium text-foreground">
-            Por dónde va el viaje
+            Etapas del flujo
           </CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="space-y-3">
-            {stages.map((s) => (
+            {productStageRows.map((s) => (
               <li key={s.id} className="flex items-center gap-3 text-sm">
                 <StageDot state={s.state} />
                 <span
@@ -144,8 +225,8 @@ export function TripContextSidebar({
             : "Aún sin huella persistente en el grafo."}
         </p>
         <p className="mt-2">
-          Las ramas alternativas llegarán después: por ahora una sola línea de
-          decisión digna de un buen viaje.
+          El panel central muestra la etapa que manda; aquí el contexto que la
+          sostiene.
         </p>
       </div>
     </div>

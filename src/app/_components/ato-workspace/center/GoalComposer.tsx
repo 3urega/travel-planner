@@ -13,6 +13,21 @@ import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
 import type { PlannerMissingSlot } from "@/contexts/travel/trip/domain/PlannerResult";
 import type { WorkspaceStatus } from "../hooks/useWorkspaceAgent";
 
+const TRIP_PROMPTS: { label: string; text: string }[] = [
+  {
+    label: "Ciudad + fechas",
+    text: "Fin de semana largo en Barcelona saliendo desde Madrid, priorizando buen vuelo matutino.",
+  },
+  {
+    label: "Presupuesto medio",
+    text: "Una semana en el norte de Italia en primavera, presupuesto medio, sin comer fuera cada noche.",
+  },
+  {
+    label: "Trabajo + calma",
+    text: "Combinar dos días de reuniones en Frankfurt con dos noches de desconexión cerca del campo.",
+  },
+];
+
 export function GoalComposer({
   goalMessage,
   onGoalChange,
@@ -76,6 +91,25 @@ export function GoalComposer({
               placeholder='Ej.: “Cuatro noches entre luces y calma en Lisboa, sin madrugadas imposibles.”'
               className="w-full resize-none rounded-xl border border-input-border bg-input px-5 py-4 text-[0.95rem] leading-relaxed text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50"
             />
+            <div className="flex flex-wrap gap-2">
+              <p className="w-full text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Ideas rápidas
+              </p>
+              {TRIP_PROMPTS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => onGoalChange(p.text)}
+                  className="rounded-full border border-border bg-card px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:border-primary-border hover:bg-primary-subtle disabled:opacity-50"
+                >
+                  <span className="font-medium text-primary">{p.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground line-clamp-2">
+                    {p.text}
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap items-center gap-4">
               <Button
                 variant="cta"
@@ -84,7 +118,7 @@ export function GoalComposer({
                 onClick={() => void onSubmit()}
                 className="rounded-xl px-6 font-semibold tracking-wide"
               >
-                Tejer el itinerario
+                Planificar mi itinerario
               </Button>
               {loading && (
                 <div className="flex flex-1 flex-col gap-2 min-w-[140px] max-w-xs">

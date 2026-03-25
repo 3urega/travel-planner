@@ -5,43 +5,85 @@ import { motion } from "framer-motion";
 
 import { Badge } from "@/components/ui/badge";
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
+import type { WorkspaceStage } from "../workflow/types";
 
-function heroCopy(response: ATOResponse | null): {
+function heroCopy(
+  response: ATOResponse | null,
+  stage: WorkspaceStage,
+): {
   title: string;
   subtitle: string;
   badge: string;
 } {
-  if (!response) {
+  if (stage === "define_trip") {
+    if (!response || response.phase === "awaiting_input") {
+      return {
+        title: "Empecemos por el viaje que imaginas",
+        subtitle:
+          response?.phase === "awaiting_input"
+            ? (response.assistantMessage ??
+              "Solo un poco de contexto y tejemos opciones a tu medida.")
+            : "Sin prisas de formulario: cuéntanos ruta, fechas y tono. El sistema te acompañará paso a paso.",
+        badge: "Definición",
+      };
+    }
+  }
+
+  if (stage === "select_flight") {
+    const sel = response?.pendingSelections?.[0];
     return {
-      title: "Diseñemos un viaje que se sienta tuyo",
+      title: sel?.title ?? "Las mejores formas de llegar",
       subtitle:
-        "Cuéntanos el tono del viaje: fechas, ritmo y lo que no negocias. El sistema te devolverá un plan vivo — y se detendrá en los cruces donde tú debes decidir.",
-      badge: "Próximo paso",
+        "Pocas opciones, bien curadas. Elige con claridad; el resto del itinerario se alinea a tu vuelo.",
+      badge: "Vuelo",
     };
   }
-  if (response.phase === "awaiting_input") {
+
+  if (stage === "select_hotel") {
+    const sel = response?.pendingSelections?.[0];
     return {
-      title: "Antes de volar, completemos el retrato",
+      title: sel?.title ?? "¿Dónde te gustaría descansar?",
       subtitle:
-        response.assistantMessage ??
-        "Un par de datos más y el itinerario cobrará forma concreta.",
-      badge: "Con tu voz",
+        "Estancias alineadas con tu tramo aéreo y tu objetivo de viaje. Un clic y el plan cobra forma coherente.",
+      badge: "Estancia",
     };
   }
-  if (response.phase === "awaiting_selection") {
-    const sel = response.pendingSelections?.[0];
+
+  if (stage === "review_trip") {
     return {
-      title: sel?.title ?? "Un momento para elegir con calma",
+      title: "Esto es lo que tu viaje significa en números y ritmo",
       subtitle:
-        "Hemos curado pocas opciones, cada una con su equilibrio precio–confort. Tu elección reanuda el hilo del plan como si cerraras un capítulo.",
-      badge: "Decisión",
+        response?.summary ??
+        response?.simulation.humanSummary ??
+        "Revisa costes, matices y tradeoffs antes de dar el siguiente paso.",
+      badge: "Revisión",
     };
   }
+
+  if (stage === "approve") {
+    return {
+      title: "Todo converge: solo falta tu visto bueno sereno",
+      subtitle:
+        "Políticas y límites explícitos. Sin presión de checkout; solo transparencia antes de que el sistema actúe.",
+      badge: "Aprobación",
+    };
+  }
+
+  if (stage === "execute_ready") {
+    return {
+      title: "El operador está en posición",
+      subtitle:
+        response?.summary ??
+        "Pasos ejecutados, auditoría y grafos: visibilidad de lo que ya ocurrió y lo que puede seguir.",
+      badge: "Operación",
+    };
+  }
+
   return {
-    title: "El itinerario ya respira en una sola línea",
-    subtitle: response.summary,
-    badge:
-      response.pendingApprovals.length > 0 ? "Revisión" : "Listo para avanzar",
+    title: "Diseñemos un viaje que se sienta tuyo",
+    subtitle:
+      "Cuéntanos el tono del viaje: fechas, ritmo y lo que no negocias.",
+    badge: "Inicio",
   };
 }
 
@@ -49,10 +91,14 @@ const easeLux = [0.22, 1, 0.36, 1] as const;
 
 export function WorkspaceHero({
   response,
+  stage,
 }: {
   response: ATOResponse | null;
+  stage: WorkspaceStage;
 }): React.ReactElement {
-  const { title, subtitle, badge } = heroCopy(response);
+  const { title, subtitle, badge } = heroCopy(response, stage);
+  const showTurn =
+    stage === "select_flight" || stage === "select_hotel";
 
   return (
     <motion.section
@@ -78,7 +124,7 @@ export function WorkspaceHero({
         >
           <span className="ato-kicker">{badge}</span>
           <Badge variant="luxury">Mesa de decisiones</Badge>
-          {response?.phase === "awaiting_selection" && (
+          {showTurn && (
             <motion.span
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
