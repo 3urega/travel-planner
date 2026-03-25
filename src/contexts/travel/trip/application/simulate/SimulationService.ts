@@ -45,7 +45,7 @@ export class SimulationService {
         });
       }
 
-      for (const depId of step.dependsOn) {
+      for (const depId of step.dependsOn ?? []) {
         if (!stepIndex.has(depId)) {
           conflicts.push({
             stepId: step.id,
@@ -58,7 +58,7 @@ export class SimulationService {
       const requiredSearchType = BOOKING_REQUIRES_SEARCH[step.type];
       if (requiredSearchType) {
         const searchExists = plan.steps.some((s) => s.type === requiredSearchType);
-        const hasSearchDep = step.dependsOn.some((depId) => {
+        const hasSearchDep = (step.dependsOn ?? []).some((depId) => {
           const dep = stepIndex.get(depId);
           return dep?.type === requiredSearchType;
         });

@@ -4,9 +4,51 @@ import { Service } from "diod";
 import { z } from "zod";
 
 import { OpenAIClient } from "../../infrastructure/ai/OpenAIClient";
-import type { Plan, PlanStepType, PlanStepStatus } from "../../domain/Plan";
+import type { PlanStepType, PlanStepStatus } from "../../domain/Plan";
 import type { PlannerGenerateResult, PlannerMissingSlot } from "../../domain/PlannerResult";
 import type { ResolvedUserTravelPreferences } from "../../domain/UserTravelPreferences";
+
+/** Fechas calendario ya recogidas en los ids habituales del planner. */
+function hasCoreDateSlots(gathered: Record<string, string>): boolean {
+  const iso = (s: string | undefined) =>
+    s !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(s.trim());
+  const ob = gathered.outbound ?? gathered.outbound_date;
+  const ret = gathered.return ?? gathered.return_date;
+  return iso(ob) && iso(ret);
+}
+
+function inferCityPair(goal: string): { from: string; to: string } {
+  const g = goal.trim();
+  const en = g.match(
+    /\ben\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+){0,2})\b/i,
+  );
+  const toCity = en?.[1]?.trim() ?? "Destination";
+  const desde = g.match(
+    /\b(?:desde|from)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+){0,2})\b/i,
+  );
+  const fromCity = desde?.[1]?.trim() ?? "Origin";
+  return { from: fromCity, to: toCity };
+}
+
+/** Cuando ida y vuelta ya están en calendario: una sola vía ejecutable; no tiene sentido volver a pedir fechas al usuario. */
+const PLAN_WITH_CONFIRMED_DATES_SYSTEM_PROMPT = `You are a travel planning orchestrator. The user has ALREADY provided concrete outbound and return calendar dates in [CONFIRMED travel data].
+
+OUTPUT ONLY valid JSON — no markdown, no explanation, no code fences.
+
+You MUST return kind "plan" only (never need_input for schedules — those dates are final).
+
+Shape:
+{
+  "kind": "plan",
+  "goal": "brief travel goal in the user's language",
+  "steps": [ 3 to 6 steps: search_flights, search_hotels, evaluate_options, propose_plan in order; book_* optional last with approvalRequired true ]
+}
+
+Rules:
+- search_flights.args: from, to, date (YYYY-MM-DD from the outbound date in confirmed data)
+- search_hotels.args: city (destination inferred from user message if possible, else "Destination"), check_in / check_out from confirmed outbound/return dates
+- Use ONLY the dates from [CONFIRMED travel data]; do not ask for more input
+- dependsOn must reflect execution order`;
 
 const planStepSchema = z.object({
   id: z.string().min(1),
@@ -71,7 +113,7 @@ You MUST return exactly ONE of two shapes:
 - Use "destination" only if origin/destination cities are unclear for booking.
 - If the user gave vague timing ("next Christmas", "in April") without calendar dates, you MUST use need_input and ask for concrete YYYY-MM-DD dates — do NOT invent dates.
 
-2) plan — when outbound and return dates are available (in the message and/or [Gathered travel data]) and you can fill search_flights / search_hotels args with YYYY-MM-DD:
+2) plan — when outbound and return dates are available (in the message and/or [Gathered travel data]) and you can fill search_flights / search_hotels args with YYYY-MM-DD. If [Gathered travel data] already has both dates as YYYY-MM-DD, you MUST return this shape — never ask for those dates again:
 {
   "kind": "plan",
   "goal": "brief description of the travel goal",
@@ -96,6 +138,23 @@ export class PlannerService {
     prefs?: ResolvedUserTravelPreferences,
     gatheredSlots?: Record<string, string>,
   ): Promise<PlannerGenerateResult> {
+    if (gatheredSlots && hasCoreDateSlots(gatheredSlots)) {
+      const planned = await this.generatePlanWithConfirmedDates(
+        userMessage,
+        sessionId,
+        prefs,
+        gatheredSlots,
+      );
+      if (planned.kind === "plan") {
+        return planned;
+      }
+      return this.buildDeterministicPlanFromGathered(
+        userMessage,
+        sessionId,
+        gatheredSlots,
+      );
+    }
+
     const client = this.openAIClient.get();
     const model = this.openAIClient.getModel();
 
@@ -112,6 +171,110 @@ export class PlannerService {
 
     const content = response.choices[0]?.message.content ?? "";
     return this.parseAndValidate(content, userMessage, sessionId);
+  }
+
+  private async generatePlanWithConfirmedDates(
+    userMessage: string,
+    sessionId: string,
+    prefs?: ResolvedUserTravelPreferences,
+    gatheredSlots?: Record<string, string>,
+  ): Promise<PlannerGenerateResult> {
+    const client = this.openAIClient.get();
+    const model = this.openAIClient.getModel();
+    const slotBlock =
+      gatheredSlots && Object.keys(gatheredSlots).length > 0
+        ? Object.entries(gatheredSlots)
+            .filter(([, v]) => v.trim() !== "")
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("\n")
+        : "";
+    const lines: string[] = [userMessage.trim(), ""];
+    lines.push("[CONFIRMED travel data — mandatory values for plan steps]");
+    lines.push(slotBlock || "(none)");
+    if (prefs) {
+      lines.push("");
+      lines.push("[User preferences]");
+      if (prefs.maxPriceUsd !== undefined) {
+        lines.push(`Approximate maximum budget: ${prefs.maxPriceUsd} USD.`);
+      }
+      lines.push(
+        `Price vs comfort weights: ${Math.round(prefs.weights.price * 100)}% price / ${Math.round(prefs.weights.comfort * 100)}% comfort.`,
+      );
+    }
+    const forcedContent = lines.join("\n");
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: PLAN_WITH_CONFIRMED_DATES_SYSTEM_PROMPT },
+        { role: "user", content: forcedContent },
+      ],
+      temperature: 0,
+    });
+    const content = response.choices[0]?.message.content ?? "";
+    return this.parseAndValidate(content, userMessage, sessionId);
+  }
+
+  private buildDeterministicPlanFromGathered(
+    userMessage: string,
+    sessionId: string,
+    gathered: Record<string, string>,
+  ): PlannerGenerateResult {
+    const ob = (gathered.outbound ?? gathered.outbound_date ?? "").trim();
+    const ret = (gathered.return ?? gathered.return_date ?? "").trim();
+    const { from, to } = inferCityPair(userMessage);
+    const now = new Date();
+    const goal =
+      userMessage.trim().length > 0
+        ? userMessage.trim().slice(0, 280)
+        : `Viaje ${from} → ${to}`;
+    return {
+      kind: "plan",
+      plan: {
+        id: crypto.randomUUID(),
+        sessionId,
+        goal,
+        steps: [
+          {
+            id: "step-search-flights",
+            type: "search_flights",
+            description: `Buscar vuelos ${from} → ${to} (ida ${ob})`,
+            status: "pending",
+            dependsOn: [],
+            args: { from, to, date: ob },
+            approvalRequired: false,
+          },
+          {
+            id: "step-search-hotels",
+            type: "search_hotels",
+            description: `Buscar estancias en ${to} (${ob} → ${ret})`,
+            status: "pending",
+            dependsOn: ["step-search-flights"],
+            args: { city: to, check_in: ob, check_out: ret },
+            approvalRequired: false,
+          },
+          {
+            id: "step-evaluate",
+            type: "evaluate_options",
+            description: "Evaluar opciones con preferencias del viajero",
+            status: "pending",
+            dependsOn: ["step-search-flights", "step-search-hotels"],
+            args: {},
+            approvalRequired: false,
+          },
+          {
+            id: "step-propose",
+            type: "propose_plan",
+            description: "Proponer itinerario coherente",
+            status: "pending",
+            dependsOn: ["step-evaluate"],
+            args: {},
+            approvalRequired: false,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
   }
 
   private buildUserContent(

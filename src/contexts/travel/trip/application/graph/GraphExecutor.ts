@@ -67,7 +67,8 @@ export class GraphExecutor {
     const fullyCompleted = new Set(checkpoint?.fullyCompletedStepIds ?? []);
 
     const pendingApprovals: PendingApprovalItem[] = [
-      ...(checkpoint?.partialPendingApprovals as PendingApprovalItem[]),
+      ...((checkpoint?.partialPendingApprovals ??
+        []) as PendingApprovalItem[]),
     ];
     const executedSteps: Array<{ stepId: string; result: unknown }> = [
       ...(checkpoint?.partialExecutedSteps ?? []),

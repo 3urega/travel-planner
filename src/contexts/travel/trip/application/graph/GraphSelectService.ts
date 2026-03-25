@@ -82,7 +82,7 @@ export class GraphSelectService {
       graphVersionId: cp.graphVersionId,
       graphId: cp.graphId,
       fullyCompletedStepIds: [
-        ...new Set([...cp.fullyCompletedStepIds, stepId]),
+        ...new Set([...(cp.fullyCompletedStepIds ?? []), stepId]),
       ],
       partialDecisions: cp.partialDecisions.map((d) =>
         d.id === decisionId

@@ -731,7 +731,7 @@ export class PostgresAdgGraphRepository {
       for (const step of plan.steps) {
         const fromId = logicalToDbId.get(step.id);
         if (!fromId) continue;
-        for (const depLogicalId of step.dependsOn) {
+        for (const depLogicalId of step.dependsOn ?? []) {
           const toId = logicalToDbId.get(depLogicalId);
           if (!toId) continue;
           const edgeId = crypto.randomUUID();

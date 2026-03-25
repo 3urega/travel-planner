@@ -46,14 +46,12 @@ export function OptionsStage({
   filterKind?: "flight" | "hotel" | null;
   showDecisionMemorial?: boolean;
 }): React.ReactElement {
-  const rawPending = response?.pendingSelections ?? [];
-  const pending = React.useMemo(
-    () =>
-      filterKind
-        ? rawPending.filter((p) => p.selectionKind === filterKind)
-        : rawPending,
-    [rawPending, filterKind],
-  );
+  const pending = React.useMemo(() => {
+    const raw = response?.pendingSelections ?? [];
+    return filterKind
+      ? raw.filter((p) => p.selectionKind === filterKind)
+      : raw;
+  }, [response, filterKind]);
 
   const showDecisions =
     Boolean(response) &&

@@ -62,10 +62,11 @@ export function ATOWorkspacePage(): React.ReactElement {
     response?.missingSlots?.every((s) => slotDraft[s.id]?.trim()),
   );
 
-  const workflow = useWorkspaceWorkflow(response, {
-    hasGoalText: goalMessage.trim().length > 0,
+  const workflow = useWorkspaceWorkflow(
+    response,
+    goalMessage.trim().length > 0,
     slotsComplete,
-  });
+  );
 
   const trip = useMemo(() => buildTripHeaderMeta(response), [response]);
   const badge = useMemo(() => buildTripStatusBadge(response), [response]);
