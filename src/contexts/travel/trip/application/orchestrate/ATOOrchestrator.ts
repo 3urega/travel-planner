@@ -13,14 +13,25 @@ import type { Session } from "../../domain/Session";
 import type { ATOResponse, PendingApprovalItem } from "../../domain/ATOResponse";
 import {
   createAwaitingInputSimulationStub,
+  createAwaitingSelectionSimulationStub,
   createPlaceholderAwaitingPlan,
 } from "../../domain/ATOResponse";
 import type { DecisionRecord } from "../../domain/DecisionRecord";
 import type { UserTravelPreferences } from "../../domain/UserTravelPreferences";
+import type { ResolvedUserTravelPreferences } from "../../domain/UserTravelPreferences";
 import {
   mergeUserTravelPreferences,
   readGatheredSlots,
 } from "../../domain/UserTravelPreferences";
+import {
+  ADG_GRAPH_ID_PREF_KEY,
+  CHECKPOINT_PLAN_PREF_KEY,
+  GRAPH_CHECKPOINT_PREF_KEY,
+  checkpointToPreferenceJson,
+  planFromPreferenceJson,
+  planToPreferenceJson,
+  readCheckpointFromPreferences,
+} from "../../domain/GraphExecutionCheckpoint";
 
 /**
  * Orquestador central del ATO (agente de viajes).
@@ -30,11 +41,12 @@ import {
  * 2. **Planner (LLM):** JSON `plan` con pasos tipados o `need_input` si faltan datos.
  * 3. **ADG:** versión del grafo de decisión asociada a la sesión (audit / trazabilidad).
  * 4. **Simulación:** coste estimado, factibilidad, conflictos de dependencias (sin side effects reales).
- * 5. **GraphExecutor:** ejecuta pasos en orden; scoring precio/confort; aprueba o deja pendientes.
- * 6. Respuesta `ATOResponse` con fase `ready`, resumen y (opcional) ids ADG.
+ * 5. **GraphExecutor:** ejecuta pasos en orden; scoring; `selection_request` interactivo (`runUntilWait`).
+ * 6. Respuesta `ATOResponse` con fase `ready` o `awaiting_selection`, resumen y (opcional) ids ADG.
  *
- * **Bifurcación `need_input`:** no hay plan ejecutable aún; la API devuelve `phase: awaiting_input`
- * y la UI debe volver a llamar con el mismo `sessionId` y `slotValues` rellenando lo que pide el LLM.
+ * **Bifurcación `need_input`:** no hay plan ejecutable aún; la API devuelve `phase: awaiting_input`.
+ *
+ * **Reanudación:** tras `POST /api/graph/select`, enviar `{ sessionId, resumeExecution: true }` al agente.
  */
 @Service()
 export class ATOOrchestrator {
@@ -48,18 +60,14 @@ export class ATOOrchestrator {
   ) {}
 
   /**
-   * Ejecuta un ciclo completo del agente para una petición HTTP (mensaje nuevo o continuación).
-   *
-   * @param userMessage - Texto del usuario; puede ir vacío si es continuación solo con slots.
-   * @param sessionId - Misma sesión entre turnos; si no viene, se genera UUID nuevo.
-   * @param incomingPreferences - Preferencias opcionales (presupuesto, pesos precio/confort).
-   * @param incomingSlotValues - Valores para slots que el planner marcó como faltantes (fechas, destino, etc.).
+   * @param options.resumeExecution - Continúa `GraphExecutor` desde preferences tras una selección HITL.
    */
   async run(
     userMessage: string,
     sessionId?: string,
     incomingPreferences?: UserTravelPreferences,
     incomingSlotValues?: Record<string, string>,
+    options?: { resumeExecution?: boolean },
   ): Promise<ATOResponse> {
     const sid = sessionId ?? crypto.randomUUID();
 
@@ -69,13 +77,17 @@ export class ATOOrchestrator {
       incomingPreferences,
     );
 
-    // Slots ya guardados en sesión + los que mande el cliente en este POST.
     const mergedSlots: Record<string, string> = {
       ...readGatheredSlots(existing?.preferences),
       ...(incomingSlotValues ?? {}),
     };
 
-    // Texto que ve el LLM: mensaje nuevo, o el goal guardado si el usuario solo envía slots.
+    const mergedPrefs = this.buildMergedPreferences(
+      existing?.preferences,
+      mergedSlots,
+      resolvedPrefs,
+    );
+
     const narrativeForPlanner =
       userMessage.trim() !== ""
         ? userMessage.trim()
@@ -83,23 +95,25 @@ export class ATOOrchestrator {
           ? existing!.goal
           : "Travel request";
 
-    // goal en Session: conserva el último mensaje explícito o el goal previo al fusionar slots.
     const goalForSession =
       userMessage.trim() !== "" ? userMessage.trim() : existing?.goal ?? userMessage.trim();
+
+    if (options?.resumeExecution && existing?.status === "awaiting_selection") {
+      return this.runResumeFromSelection(
+        sid,
+        existing,
+        goalForSession || narrativeForPlanner,
+        mergedPrefs,
+        resolvedPrefs,
+      );
+    }
 
     const session: Session = {
       id: sid,
       goal: goalForSession || narrativeForPlanner,
       status: "active",
       planId: null,
-      preferences: {
-        ...(resolvedPrefs.maxPriceUsd !== undefined && {
-          maxPriceUsd: resolvedPrefs.maxPriceUsd,
-        }),
-        priceWeight: resolvedPrefs.weights.price,
-        comfortWeight: resolvedPrefs.weights.comfort,
-        gatheredSlots: mergedSlots,
-      },
+      preferences: mergedPrefs,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };
@@ -113,7 +127,6 @@ export class ATOOrchestrator {
       });
     }
 
-    // --- Planner: única llamada LLM estructurada; decide need_input vs plan ---
     const plannerResult = await this.plannerService.generate(
       narrativeForPlanner,
       sid,
@@ -121,7 +134,6 @@ export class ATOOrchestrator {
       mergedSlots,
     );
 
-    // Salida temprana: el cliente debe rellenar missingSlots y repetir POST con sessionId.
     if (plannerResult.kind === "need_input") {
       await this.auditLogger.log({
         sessionId: sid,
@@ -140,7 +152,6 @@ export class ATOOrchestrator {
       });
 
       const auditEvents = await this.auditLogger.getSessionHistory(sid);
-      // Plan/simulación ficticios: la UI espera la misma forma que en phase ready.
       const placeholderPlan = createPlaceholderAwaitingPlan(sid);
       const stubSim = createAwaitingInputSimulationStub();
 
@@ -159,7 +170,6 @@ export class ATOOrchestrator {
       };
     }
 
-    // --- Camino feliz: plan válido → persistir grafo, simular, ejecutar pasos ---
     const plan = plannerResult.plan;
 
     await this.auditLogger.log({
@@ -179,7 +189,6 @@ export class ATOOrchestrator {
 
     const graphVersionId = adgPersisted?.graphVersionId;
 
-    // Simulación en memoria; opcionalmente se vuelca al ADG junto al plan.
     const simulation = this.simulationService.simulate(plan);
     if (graphVersionId) {
       await this.decisionGraphWriter.persistSimulationPhase(
@@ -200,22 +209,61 @@ export class ATOOrchestrator {
       },
     });
 
-    // Ejecución ordenada según dependencias del plan; genera decisiones y aprobaciones pendientes.
-    const { pendingApprovals, executedSteps, decisions } =
-      await this.graphExecutor.runPlanStepExecutionPhase({
-        graphVersionId,
-        plan,
-        sessionId: sid,
-        preferences: resolvedPrefs,
+    const execResult = await this.graphExecutor.runPlanStepExecutionPhase({
+      graphVersionId,
+      plan,
+      sessionId: sid,
+      preferences: resolvedPrefs,
+      checkpoint: null,
+    });
+
+    if (execResult.executionPhase === "awaiting_selection") {
+      if (execResult.checkpoint && adgPersisted) {
+        execResult.checkpoint.graphId = adgPersisted.graphId;
+      }
+      mergedPrefs[CHECKPOINT_PLAN_PREF_KEY] = planToPreferenceJson(plan);
+      mergedPrefs[GRAPH_CHECKPOINT_PREF_KEY] = checkpointToPreferenceJson(
+        execResult.checkpoint!,
+      );
+      if (adgPersisted) {
+        mergedPrefs[ADG_GRAPH_ID_PREF_KEY] = adgPersisted.graphId;
+      }
+
+      await this.sessionRepository.save({
+        ...session,
+        status: "awaiting_selection",
+        planId: plan.id,
+        preferences: mergedPrefs,
+        updatedAt: new Date(),
       });
 
-    // Si quedan pasos que requieren confirmación humana, la sesión no se marca como completed.
+      const auditEvents = await this.auditLogger.getSessionHistory(sid);
+      return {
+        sessionId: sid,
+        phase: "awaiting_selection",
+        pendingSelections: execResult.pendingSelections,
+        plan,
+        simulation,
+        decisions: execResult.decisions,
+        pendingApprovals: execResult.pendingApprovals,
+        executedSteps: execResult.executedSteps,
+        auditEvents,
+        summary:
+          "Elige una opción del catálogo; confirma con POST /api/graph/select y reanuda con resumeExecution.",
+        ...(adgPersisted && {
+          adgGraphId: adgPersisted.graphId,
+          adgGraphVersionId: adgPersisted.graphVersionId,
+        }),
+      };
+    }
+
     const finalStatus =
-      pendingApprovals.length > 0 ? "awaiting_approval" : "completed";
+      execResult.pendingApprovals.length > 0 ? "awaiting_approval" : "completed";
     await this.sessionRepository.save({
       ...session,
       status: finalStatus,
       planId: plan.id,
+      preferences: this.stripGraphCheckpointPrefs(mergedPrefs),
       updatedAt: new Date(),
     });
     await this.auditLogger.log({
@@ -231,9 +279,9 @@ export class ATOOrchestrator {
     const summary = this.buildSummary(
       plan,
       simulation,
-      pendingApprovals,
-      executedSteps,
-      decisions,
+      execResult.pendingApprovals,
+      execResult.executedSteps,
+      execResult.decisions,
     );
 
     return {
@@ -241,15 +289,150 @@ export class ATOOrchestrator {
       phase: "ready",
       plan,
       simulation,
-      decisions,
-      pendingApprovals,
-      executedSteps,
+      decisions: execResult.decisions,
+      pendingApprovals: execResult.pendingApprovals,
+      executedSteps: execResult.executedSteps,
       auditEvents,
       summary,
       ...(adgPersisted && {
         adgGraphId: adgPersisted.graphId,
         adgGraphVersionId: adgPersisted.graphVersionId,
       }),
+    };
+  }
+
+  private buildMergedPreferences(
+    existingPrefs: Record<string, unknown> | undefined,
+    mergedSlots: Record<string, string>,
+    resolvedPrefs: ResolvedUserTravelPreferences,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...(existingPrefs ?? {}) };
+    merged.gatheredSlots = mergedSlots;
+    merged.priceWeight = resolvedPrefs.weights.price;
+    merged.comfortWeight = resolvedPrefs.weights.comfort;
+    if (resolvedPrefs.maxPriceUsd !== undefined) {
+      merged.maxPriceUsd = resolvedPrefs.maxPriceUsd;
+    }
+    return merged;
+  }
+
+  private stripGraphCheckpointPrefs(
+    prefs: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const next = { ...prefs };
+    delete next[CHECKPOINT_PLAN_PREF_KEY];
+    delete next[GRAPH_CHECKPOINT_PREF_KEY];
+    delete next[ADG_GRAPH_ID_PREF_KEY];
+    return next;
+  }
+
+  private async runResumeFromSelection(
+    sid: string,
+    existing: Session,
+    goal: string,
+    mergedPrefs: Record<string, unknown>,
+    resolvedPrefs: ResolvedUserTravelPreferences,
+  ): Promise<ATOResponse> {
+    const planRaw = mergedPrefs[CHECKPOINT_PLAN_PREF_KEY];
+    const plan = planFromPreferenceJson(planRaw);
+    const checkpoint = readCheckpointFromPreferences(mergedPrefs);
+    if (!plan || !checkpoint) {
+      throw new Error("No hay plan o checkpoint de grafo para reanudar.");
+    }
+
+    const graphVersionId = checkpoint.graphVersionId;
+    const adgGraphId =
+      (typeof mergedPrefs[ADG_GRAPH_ID_PREF_KEY] === "string"
+        ? mergedPrefs[ADG_GRAPH_ID_PREF_KEY]
+        : undefined) ?? checkpoint.graphId;
+
+    const simulation = this.simulationService.simulate(plan);
+
+    const execResult = await this.graphExecutor.runPlanStepExecutionPhase({
+      graphVersionId,
+      plan,
+      sessionId: sid,
+      preferences: resolvedPrefs,
+      checkpoint,
+    });
+
+    if (execResult.executionPhase === "awaiting_selection") {
+      mergedPrefs[GRAPH_CHECKPOINT_PREF_KEY] = checkpointToPreferenceJson(
+        execResult.checkpoint!,
+      );
+      mergedPrefs[CHECKPOINT_PLAN_PREF_KEY] = planToPreferenceJson(plan);
+      if (adgGraphId) mergedPrefs[ADG_GRAPH_ID_PREF_KEY] = adgGraphId;
+
+      await this.sessionRepository.save({
+        ...existing,
+        goal,
+        preferences: mergedPrefs,
+        status: "awaiting_selection",
+        updatedAt: new Date(),
+      });
+
+      const auditEvents = await this.auditLogger.getSessionHistory(sid);
+      return {
+        sessionId: sid,
+        phase: "awaiting_selection",
+        pendingSelections: execResult.pendingSelections,
+        plan,
+        simulation: createAwaitingSelectionSimulationStub(),
+        decisions: execResult.decisions,
+        pendingApprovals: execResult.pendingApprovals,
+        executedSteps: execResult.executedSteps,
+        auditEvents,
+        summary:
+          "Selecciona otra opción o reanuda tras confirmar en /api/graph/select.",
+        ...(adgGraphId && graphVersionId
+          ? { adgGraphId: String(adgGraphId), adgGraphVersionId: graphVersionId }
+          : {}),
+      };
+    }
+
+    const finalStatus =
+      execResult.pendingApprovals.length > 0 ? "awaiting_approval" : "completed";
+
+    const cleanedPrefs = this.stripGraphCheckpointPrefs(mergedPrefs);
+
+    await this.sessionRepository.save({
+      ...existing,
+      goal,
+      preferences: cleanedPrefs,
+      status: finalStatus,
+      planId: plan.id,
+      updatedAt: new Date(),
+    });
+    await this.auditLogger.log({
+      sessionId: sid,
+      planId: plan.id,
+      type: "session_completed",
+      actor: "system",
+      reason: finalStatus,
+    });
+
+    const auditEvents = await this.auditLogger.getSessionHistory(sid);
+    const summary = this.buildSummary(
+      plan,
+      simulation,
+      execResult.pendingApprovals,
+      execResult.executedSteps,
+      execResult.decisions,
+    );
+
+    return {
+      sessionId: sid,
+      phase: "ready",
+      plan,
+      simulation,
+      decisions: execResult.decisions,
+      pendingApprovals: execResult.pendingApprovals,
+      executedSteps: execResult.executedSteps,
+      auditEvents,
+      summary,
+      ...(adgGraphId && graphVersionId
+        ? { adgGraphId: String(adgGraphId), adgGraphVersionId: graphVersionId }
+        : {}),
     };
   }
 

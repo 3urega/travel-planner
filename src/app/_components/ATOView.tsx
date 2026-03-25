@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ATOResponse, PendingApprovalItem } from "@/contexts/travel/trip/domain/ATOResponse";
+import type { PendingSelectionItem } from "@/contexts/travel/trip/domain/GraphExecutionCheckpoint";
 import type { DecisionRecord } from "@/contexts/travel/trip/domain/DecisionRecord";
 import type { AuditEvent } from "@/contexts/travel/trip/domain/AuditEvent";
 import type { Plan, PlanStep } from "@/contexts/travel/trip/domain/Plan";
@@ -11,6 +12,21 @@ import type { SimulationResult } from "@/contexts/travel/trip/domain/SimulationR
 
 function cx(...classes: (string | false | undefined)[]): string {
   return classes.filter(Boolean).join(" ");
+}
+
+function buildPreferencesBody(
+  priceComfortSlider: number,
+  maxPriceUsdInput: string,
+): Record<string, unknown> {
+  const v = priceComfortSlider;
+  const priceWeight = 1 - v / 100;
+  const comfortWeight = v / 100;
+  const maxParsed =
+    maxPriceUsdInput.trim() === "" ? undefined : Number(maxPriceUsdInput);
+  if (maxParsed !== undefined && Number.isFinite(maxParsed) && maxParsed > 0) {
+    return { maxPriceUsd: maxParsed, priceWeight, comfortWeight };
+  }
+  return { priceWeight, comfortWeight };
 }
 
 function ApprovalBadge({ level }: { level: PendingApprovalItem["level"] }): React.ReactElement {
@@ -92,9 +108,10 @@ function SimulationSection({
   phase,
 }: {
   sim: SimulationResult;
-  phase?: "awaiting_input" | "ready";
+  phase?: "awaiting_input" | "awaiting_selection" | "ready";
 }): React.ReactElement {
-  const awaiting = phase === "awaiting_input";
+  const awaiting =
+    phase === "awaiting_input" || phase === "awaiting_selection";
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
@@ -194,6 +211,131 @@ function ApprovalGroup({
         ))}
       </ul>
     </div>
+  );
+}
+
+// ─── Pending HITL selections (ADG selection_request) ─────────────────────────
+
+function PendingSelectionsSection({
+  items,
+  sessionId,
+  graphVersionId,
+  preferences,
+  onResumed,
+}: {
+  items: PendingSelectionItem[];
+  sessionId: string;
+  graphVersionId?: string;
+  preferences: Record<string, unknown>;
+  onResumed: (r: ATOResponse) => void;
+}): React.ReactElement {
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  if (items.length === 0) return <></>;
+
+  const choose = async (
+    item: PendingSelectionItem,
+    optionId: string,
+  ): Promise<void> => {
+    if (!graphVersionId) {
+      setLocalError("Falta adgGraphVersionId en la respuesta.");
+      return;
+    }
+    setBusyKey(`${item.selectionRequestLogicalId}:${optionId}`);
+    setLocalError(null);
+    try {
+      const r1 = await fetch("/api/graph/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          graphVersionId,
+          selectionRequestLogicalId: item.selectionRequestLogicalId,
+          selectedOptionId: optionId,
+        }),
+      });
+      const j1 = (await r1.json()) as { error?: string };
+      if (!r1.ok) throw new Error(j1.error ?? `select ${r1.status}`);
+
+      const r2 = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          message: "",
+          resumeExecution: true,
+          preferences,
+        }),
+      });
+      const j2 = (await r2.json()) as ATOResponse | { error?: string };
+      if (!r2.ok) {
+        throw new Error(
+          (j2 as { error?: string }).error ?? `agent ${r2.status}`,
+        );
+      }
+      onResumed(j2 as ATOResponse);
+    } catch (e) {
+      setLocalError(
+        e instanceof Error ? e.message : "Error al reanudar el grafo.",
+      );
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-amber-200 bg-amber-50/80 p-5 shadow-sm">
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-900">
+        Tu elección requerida
+      </h2>
+      <p className="mb-3 text-xs text-amber-950/90">
+        El plan está en pausa. La elección se persiste como{" "}
+        <code className="font-mono text-[11px]">selection_result</code> en el ADG.
+      </p>
+      {localError && (
+        <p className="mb-2 text-xs text-red-700" role="alert">
+          {localError}
+        </p>
+      )}
+      <div className="space-y-4">
+        {items.map((item) => (
+          <div
+            key={item.selectionRequestLogicalId}
+            className="rounded-lg border border-amber-200 bg-white p-3"
+          >
+            <p className="text-sm font-medium text-zinc-800">{item.title}</p>
+            <div className="mt-2 flex flex-col gap-2">
+              {item.options.map((opt) => {
+                const k = `${item.selectionRequestLogicalId}:${opt.id}`;
+                const loading = busyKey === k;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={loading || Boolean(busyKey)}
+                    onClick={() => void choose(item, opt.id)}
+                    className={cx(
+                      "rounded-lg border border-zinc-200 px-3 py-2 text-left text-xs transition-colors hover:bg-amber-50",
+                      loading && "opacity-60",
+                      Boolean(busyKey) && !loading && "opacity-50",
+                    )}
+                  >
+                    <span className="font-medium">{opt.label}</span>
+                    {opt.priceUsd !== undefined && (
+                      <span className="ml-2 tabular-nums text-zinc-500">
+                        ${opt.priceUsd}
+                      </span>
+                    )}
+                    {loading && <span className="ml-2 text-amber-700">…</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -436,6 +578,10 @@ export function ATOView(): React.ReactElement {
   const [maxPriceUsd, setMaxPriceUsd] = useState("");
 
   const awaitingInput = response?.phase === "awaiting_input";
+  const awaitingSelection = response?.phase === "awaiting_selection";
+  const showPlanPhase =
+    response !== null &&
+    (response.phase === "ready" || response.phase === "awaiting_selection");
 
   useEffect(() => {
     if (response?.phase === "awaiting_input" && response.missingSlots) {
@@ -452,14 +598,7 @@ export function ATOView(): React.ReactElement {
   const submit = async (): Promise<void> => {
     if (status === "loading") return;
 
-    const v = priceComfortSlider;
-    const priceWeight = 1 - v / 100;
-    const comfortWeight = v / 100;
-    const maxParsed = maxPriceUsd.trim() === "" ? undefined : Number(maxPriceUsd);
-    const preferences =
-      maxParsed !== undefined && Number.isFinite(maxParsed) && maxParsed > 0
-        ? { maxPriceUsd: maxParsed, priceWeight, comfortWeight }
-        : { priceWeight, comfortWeight };
+    const preferences = buildPreferencesBody(priceComfortSlider, maxPriceUsd);
 
     const continuation =
       awaitingInput &&
@@ -512,7 +651,7 @@ export function ATOView(): React.ReactElement {
       const data = (await res.json()) as ATOResponse;
       setResponse(data);
       setSessionIdForNext(data.sessionId);
-      if (data.phase === "ready") {
+      if (data.phase === "ready" || data.phase === "awaiting_selection") {
         setSlotDraft({});
       }
       setStatus("done");
@@ -530,6 +669,7 @@ export function ATOView(): React.ReactElement {
 
   const primaryDisabled =
     status === "loading" ||
+    awaitingSelection ||
     (!awaitingInput && !message.trim()) ||
     (awaitingInput && !canSubmitContinue);
 
@@ -699,7 +839,23 @@ export function ATOView(): React.ReactElement {
             </section>
           )}
 
-          {(response.adgGraphId ?? response.adgGraphVersionId) && response.phase === "ready" && (
+          {response.phase === "awaiting_selection" &&
+            response.pendingSelections &&
+            response.pendingSelections.length > 0 && (
+              <PendingSelectionsSection
+                items={response.pendingSelections}
+                sessionId={response.sessionId}
+                graphVersionId={response.adgGraphVersionId}
+                preferences={buildPreferencesBody(priceComfortSlider, maxPriceUsd)}
+                onResumed={(r) => {
+                  setResponse(r);
+                  setSessionIdForNext(r.sessionId);
+                  setStatus("done");
+                }}
+              />
+            )}
+
+          {(response.adgGraphId ?? response.adgGraphVersionId) && showPlanPhase && (
             <p className="text-xs text-zinc-500 font-mono">
               ADG: graph={response.adgGraphId ?? "—"} · versión=
               {response.adgGraphVersionId ?? "—"}
@@ -707,18 +863,18 @@ export function ATOView(): React.ReactElement {
           )}
 
           {/* Plan */}
-          {response.phase === "ready" && <PlanSection plan={response.plan} />}
+          {showPlanPhase && <PlanSection plan={response.plan} />}
 
           {/* Simulación */}
           <SimulationSection sim={response.simulation} phase={response.phase} />
 
           {/* Aprobaciones pendientes */}
-          {response.phase === "ready" && (
+          {showPlanPhase && (
             <ApprovalsSection approvals={response.pendingApprovals} />
           )}
 
           {/* Decisiones */}
-          {response.phase === "ready" && (
+          {showPlanPhase && (
             <DecisionsSection
               decisions={response.decisions}
               sessionId={response.sessionId}

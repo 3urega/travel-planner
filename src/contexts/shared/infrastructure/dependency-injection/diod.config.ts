@@ -23,6 +23,7 @@ import { AuditLogger } from "@/contexts/travel/trip/application/audit/AuditLogge
 import { ChooseOptionService } from "@/contexts/travel/trip/application/choose/ChooseOptionService";
 import { DecisionGraphWriter } from "@/contexts/travel/trip/application/graph/DecisionGraphWriter";
 import { GraphExecutor } from "@/contexts/travel/trip/application/graph/GraphExecutor";
+import { GraphSelectService } from "@/contexts/travel/trip/application/graph/GraphSelectService";
 import { ATOOrchestrator } from "@/contexts/travel/trip/application/orchestrate/ATOOrchestrator";
 
 // Travel: Legacy (mantener para compatibilidad)
@@ -51,6 +52,7 @@ builder.registerAndUse(AuditLogger);
 builder.registerAndUse(ChooseOptionService);
 builder.registerAndUse(DecisionGraphWriter);
 builder.registerAndUse(GraphExecutor);
+builder.registerAndUse(GraphSelectService);
 builder.registerAndUse(ATOOrchestrator);
 
 // Legacy

@@ -11,17 +11,28 @@ import type { Plan, PlanStep } from "../../domain/Plan";
 import type { PendingApprovalItem } from "../../domain/ATOResponse";
 import type { DecisionRecord } from "../../domain/DecisionRecord";
 import type { ResolvedUserTravelPreferences } from "../../domain/UserTravelPreferences";
+import type {
+  GraphExecutionCheckpoint,
+  PendingSelectionItem,
+} from "../../domain/GraphExecutionCheckpoint";
+
+const INTERACTIVE_SEARCH_TYPES = new Set<string>(["search_flights", "search_hotels"]);
 
 export type PlanStepExecutionResult = {
   pendingApprovals: PendingApprovalItem[];
   executedSteps: Array<{ stepId: string; result: unknown }>;
   decisions: DecisionRecord[];
+  /** `awaiting_selection`: run-until-wait detuvo el motor en un `selection_request`. */
+  executionPhase: "completed" | "awaiting_selection";
+  pendingSelections?: PendingSelectionItem[];
+  checkpoint?: GraphExecutionCheckpoint;
 };
 
 /**
  * Fase B: motor de ejecución alineado con el ADG.
  * Ordena `plan_step` según dependencias persistidas y ejecuta el mismo pipeline
- * que antes vivía solo en el orquestador (aprobación → tool → decisión).
+ * (aprobación → tool → decisión). Modo interactivo: tras ranking en búsquedas,
+ * persiste `selection_request` y **para** hasta POST /api/graph/select + resume.
  */
 @Service()
 export class GraphExecutor {
@@ -35,21 +46,39 @@ export class GraphExecutor {
 
   /**
    * Recorre los pasos en orden topológico del grafo (o el orden del plan si falla la lectura).
+   * Con `checkpoint` reanuda tras una selección humana (`fullyCompletedStepIds`).
    */
   async runPlanStepExecutionPhase(params: {
     graphVersionId: string | undefined;
     plan: Plan;
     sessionId: string;
     preferences: ResolvedUserTravelPreferences;
+    checkpoint?: GraphExecutionCheckpoint | null;
   }): Promise<PlanStepExecutionResult> {
-    const { graphVersionId, plan, sessionId: sid, preferences } = params;
-    const steps = await this.resolveExecutionOrder(graphVersionId, plan);
+    const {
+      graphVersionId,
+      plan,
+      sessionId: sid,
+      preferences,
+      checkpoint,
+    } = params;
 
-    const pendingApprovals: PendingApprovalItem[] = [];
-    const executedSteps: Array<{ stepId: string; result: unknown }> = [];
-    const decisions: DecisionRecord[] = [];
+    const steps = await this.resolveExecutionOrder(graphVersionId, plan);
+    const fullyCompleted = new Set(checkpoint?.fullyCompletedStepIds ?? []);
+
+    const pendingApprovals: PendingApprovalItem[] = [
+      ...(checkpoint?.partialPendingApprovals as PendingApprovalItem[]),
+    ];
+    const executedSteps: Array<{ stepId: string; result: unknown }> = [
+      ...(checkpoint?.partialExecutedSteps ?? []),
+    ];
+    const decisions: DecisionRecord[] = [...(checkpoint?.partialDecisions ?? [])];
 
     for (const step of steps) {
+      if (fullyCompleted.has(step.id)) {
+        continue;
+      }
+
       const toolDef = travelTools[step.type];
       const estimatedCost = toolDef?.estimateCost?.(step.args);
       const approvalResult = this.approvalPolicyService.evaluate(
@@ -130,6 +159,67 @@ export class GraphExecutor {
                 decision,
               );
             }
+
+            if (
+              graphVersionId &&
+              INTERACTIVE_SEARCH_TYPES.has(step.type)
+            ) {
+              const title =
+                step.type === "search_hotels"
+                  ? "Elige tu hotel"
+                  : "Elige tu vuelo";
+              await this.decisionGraphWriter.persistSelectionRequestAfterDecision(
+                graphVersionId,
+                step.id,
+                decision,
+                title,
+              );
+
+              const pendingSel: PendingSelectionItem = {
+                stepId: step.id,
+                decisionId: decision.id,
+                selectionRequestLogicalId: `selection_request:${decision.id}`,
+                selectionKind:
+                  decision.category === "hotel" ? "hotel" : "flight",
+                title,
+                options: decision.options.map((o) => ({
+                  id: o.id,
+                  label: o.label,
+                  priceUsd: o.price,
+                })),
+              };
+
+              const execCheckpoint: GraphExecutionCheckpoint = {
+                graphVersionId,
+                graphId: checkpoint?.graphId,
+                fullyCompletedStepIds: [...fullyCompleted],
+                partialDecisions: [...decisions],
+                partialExecutedSteps: [...executedSteps],
+                partialPendingApprovals: [...pendingApprovals],
+                awaitingSelection: pendingSel,
+              };
+
+              await this.auditLogger.log({
+                sessionId: sid,
+                planId: plan.id,
+                stepId: step.id,
+                type: "input_required",
+                actor: "system",
+                payloadSnapshot: {
+                  kind: "selection_request",
+                  selectionRequestLogicalId: pendingSel.selectionRequestLogicalId,
+                },
+              });
+
+              return {
+                pendingApprovals,
+                executedSteps,
+                decisions,
+                executionPhase: "awaiting_selection",
+                pendingSelections: [pendingSel],
+                checkpoint: execCheckpoint,
+              };
+            }
           }
         } else {
           await this.auditLogger.log({
@@ -179,7 +269,22 @@ export class GraphExecutor {
       }
     }
 
-    return { pendingApprovals, executedSteps, decisions };
+    return {
+      pendingApprovals,
+      executedSteps,
+      decisions,
+      executionPhase: "completed",
+      checkpoint: graphVersionId
+        ? {
+            graphVersionId,
+            graphId: checkpoint?.graphId,
+            fullyCompletedStepIds: [...fullyCompleted],
+            partialDecisions: decisions,
+            partialExecutedSteps: executedSteps,
+            partialPendingApprovals: pendingApprovals,
+          }
+        : undefined,
+    };
   }
 
   private async resolveExecutionOrder(

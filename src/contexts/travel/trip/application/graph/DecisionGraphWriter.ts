@@ -102,4 +102,24 @@ export class DecisionGraphWriter {
       );
     }
   }
+
+  /** Tras ranking: nodo HITL `selection_request` en el ADG. */
+  async persistSelectionRequestAfterDecision(
+    graphVersionId: string,
+    stepId: string,
+    decision: DecisionRecord,
+    title: string,
+  ): Promise<void> {
+    const ok = await this.adgRepository.appendSelectionRequestForDecision(
+      graphVersionId,
+      stepId,
+      decision,
+      title,
+    );
+    if (!ok) {
+      console.warn(
+        `[DecisionGraphWriter] persistSelectionRequestAfterDecision omitido (${stepId}).`,
+      );
+    }
+  }
 }

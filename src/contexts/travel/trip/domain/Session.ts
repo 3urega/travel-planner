@@ -1,6 +1,7 @@
 export type SessionStatus =
   | "active"
   | "awaiting_approval"
+  | "awaiting_selection"
   | "completed"
   | "cancelled";
 

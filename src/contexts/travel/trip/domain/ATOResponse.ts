@@ -4,6 +4,7 @@ import type { DecisionRecord } from "./DecisionRecord";
 import type { AuditEvent } from "./AuditEvent";
 import type { ApprovalLevel } from "./ApprovalPolicy";
 import type { PlannerMissingSlot } from "./PlannerResult";
+import type { PendingSelectionItem } from "./GraphExecutionCheckpoint";
 
 export type PendingApprovalItem = {
   stepId: string;
@@ -23,11 +24,13 @@ export type PendingApprovalItem = {
  */
 export type ATOResponse = {
   sessionId: string;
-  phase: "awaiting_input" | "ready";
+  phase: "awaiting_input" | "awaiting_selection" | "ready";
   /** Si el planner necesita datos del usuario (mensaje natural para la UI). */
   assistantMessage?: string;
   /** Campos pendientes (ids alineados con `slotValues` en el siguiente POST). */
   missingSlots?: PlannerMissingSlot[];
+  /** Barreras HITL de catálogo (vuelo/hotel); POST /api/graph/select y reanudar con resumeExecution. */
+  pendingSelections?: PendingSelectionItem[];
   plan: Plan;
   simulation: SimulationResult;
   decisions: DecisionRecord[];
@@ -71,5 +74,18 @@ export function createAwaitingInputSimulationStub(): SimulationResult {
     feasible: false,
     humanSummary:
       "Completa los datos solicitados y envía de nuevo para simular y ejecutar el plan.",
+  };
+}
+
+/** Simulación placeholder cuando el motor está pausado en `selection_request`. */
+export function createAwaitingSelectionSimulationStub(): SimulationResult {
+  return {
+    planId: "",
+    totalEstimatedCost: 0,
+    breakdown: [],
+    dependencyConflicts: [],
+    feasible: false,
+    humanSummary:
+      "Elige una opción del catálogo; luego POST /api/agent con resumeExecution para continuar.",
   };
 }

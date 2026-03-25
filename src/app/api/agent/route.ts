@@ -42,20 +42,23 @@ export async function POST(req: Request): Promise<NextResponse> {
     sessionId?: string;
     preferences?: unknown;
     slotValues?: unknown;
+    resumeExecution?: boolean;
   };
 
   const message = typeof body.message === "string" ? body.message : "";
   const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
   const slotValues = normalizeIncomingSlotValues(body.slotValues);
+  const resumeExecution = body.resumeExecution === true;
+  const isResumeGraph = resumeExecution && sessionId !== undefined;
 
   const isSlotContinuation =
     sessionId !== undefined &&
     slotValues !== undefined &&
     Object.keys(slotValues).length > 0;
 
-  if (!message.trim() && !isSlotContinuation) {
+  if (!message.trim() && !isSlotContinuation && !isResumeGraph) {
     return HttpNextResponse.badRequest(
-      "El campo 'message' es obligatorio, salvo continuación con sessionId y slotValues.",
+      "El campo 'message' es obligatorio, salvo continuación (sessionId + slotValues) o resumeExecution con sessionId.",
     );
   }
 
@@ -65,6 +68,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       sessionId,
       parsePreferences(body.preferences),
       slotValues,
+      { resumeExecution },
     );
     return HttpNextResponse.json(result);
   } catch (err) {

@@ -15,14 +15,21 @@ export type GraphNodeType =
   | "simulation"
   | "decision"
   | "approval"
-  | "execution";
+  | "execution"
+  | "selection_request"
+  | "selection_result";
 
 export type GraphNodeStatus =
   | "pending"
+  | "ready"
+  | "running"
+  | "waiting_user"
+  | "waiting_approval"
   | "completed"
   | "blocked"
   | "failed"
-  | "skipped";
+  | "skipped"
+  | "cancelled";
 
 export type GraphEdgeType = "depends_on" | "produces" | "influences";
 
