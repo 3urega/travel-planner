@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ATOResponse, PendingApprovalItem } from "@/contexts/travel/trip/domain/ATOResponse";
 import type { DecisionRecord } from "@/contexts/travel/trip/domain/DecisionRecord";
 import type { AuditEvent } from "@/contexts/travel/trip/domain/AuditEvent";
@@ -87,16 +87,29 @@ function StepRow({
 
 // ─── Simulation section ───────────────────────────────────────────────────────
 
-function SimulationSection({ sim }: { sim: SimulationResult }): React.ReactElement {
+function SimulationSection({
+  sim,
+  phase,
+}: {
+  sim: SimulationResult;
+  phase?: "awaiting_input" | "ready";
+}): React.ReactElement {
+  const awaiting = phase === "awaiting_input";
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
         Simulación
       </h2>
-      <div className={cx(
-        "mb-3 rounded-lg px-4 py-2 text-sm",
-        sim.feasible ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800",
-      )}>
+      <div
+        className={cx(
+          "mb-3 rounded-lg px-4 py-2 text-sm",
+          awaiting
+            ? "bg-zinc-100 text-zinc-800"
+            : sim.feasible
+              ? "bg-emerald-50 text-emerald-800"
+              : "bg-red-50 text-red-800",
+        )}
+      >
         {sim.humanSummary}
       </div>
       {sim.breakdown.length > 0 && (
@@ -188,8 +201,14 @@ function ApprovalGroup({
 
 function DecisionsSection({
   decisions,
+  sessionId,
+  graphVersionId,
+  onChoiceConfirmed,
 }: {
   decisions: DecisionRecord[];
+  sessionId: string;
+  graphVersionId?: string;
+  onChoiceConfirmed: (decisionId: string, chosenOptionId: string) => void;
 }): React.ReactElement {
   if (decisions.length === 0) return <></>;
 
@@ -203,9 +222,19 @@ function DecisionsSection({
         al volver a ejecutar se reutiliza el mismo <code className="text-zinc-600">sessionId</code> en
         servidor (preferencias fusionadas); el plan se genera de nuevo con el LLM.
       </p>
+      <p className="mb-3 text-xs text-zinc-600">
+        Haz clic en una opción para confirmar tu elección. Si no eliges, se mantiene la sugerencia del
+        sistema.
+      </p>
       <div className="space-y-4">
         {decisions.map((d) => (
-          <DecisionCard key={d.id} decision={d} />
+          <DecisionCard
+            key={d.id}
+            decision={d}
+            sessionId={sessionId}
+            graphVersionId={graphVersionId}
+            onChoiceConfirmed={onChoiceConfirmed}
+          />
         ))}
       </div>
     </section>
@@ -214,10 +243,53 @@ function DecisionsSection({
 
 function DecisionCard({
   decision,
+  sessionId,
+  graphVersionId,
+  onChoiceConfirmed,
 }: {
   decision: DecisionRecord;
+  sessionId: string;
+  graphVersionId?: string;
+  onChoiceConfirmed: (decisionId: string, chosenOptionId: string) => void;
 }): React.ReactElement {
   const [open, setOpen] = useState(true);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const canPersistChoice = Boolean(graphVersionId);
+  const userPick = decision.userChosenId;
+
+  const chooseOption = async (chosenOptionId: string): Promise<void> => {
+    if (!canPersistChoice) {
+      setLocalError("No hay versión ADG en esta respuesta; no se puede persistir la elección.");
+      return;
+    }
+    setLocalError(null);
+    setPendingId(chosenOptionId);
+    try {
+      const res = await fetch("/api/agent/choose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          decisionId: decision.id,
+          chosenOptionId,
+          graphVersionId,
+        }),
+      });
+      const body = (await res.json()) as { ok?: boolean; chosenOptionId?: string; error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? `Error ${res.status}`);
+      }
+      if (body.chosenOptionId) {
+        onChoiceConfirmed(decision.id, body.chosenOptionId);
+      }
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : "No se pudo guardar la elección.");
+    } finally {
+      setPendingId(null);
+    }
+  };
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
@@ -234,24 +306,55 @@ function DecisionCard({
         </button>
       </div>
       <p className="mt-1 text-xs text-zinc-500">{decision.justification}</p>
+      {localError && (
+        <p className="mt-2 text-xs text-red-600" role="alert">
+          {localError}
+        </p>
+      )}
       {open && (
-        <div className="mt-3 space-y-1">
-          {decision.options.map((opt) => (
-            <div
-              key={opt.id}
-              className={cx(
-                "flex items-center justify-between rounded px-2 py-1 text-xs",
-                opt.chosen
-                  ? "bg-emerald-100 text-emerald-900 font-semibold"
-                  : "text-zinc-600",
-              )}
-            >
-              <span>{opt.label}</span>
-              <span className="tabular-nums">
-                {opt.chosen && "★ "}score: {opt.totalScore}
-              </span>
-            </div>
-          ))}
+        <div className="mt-3 space-y-2">
+          {decision.options.map((opt) => {
+            const confirmedByUser = userPick === opt.id;
+            const systemSuggestion = opt.chosen && !confirmedByUser;
+            const isLoading = pendingId === opt.id;
+
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                disabled={isLoading}
+                onClick={() => void chooseOption(opt.id)}
+                className={cx(
+                  "flex w-full flex-col gap-1 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                  confirmedByUser
+                    ? "border-blue-400 bg-blue-50 text-blue-950"
+                    : opt.chosen
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                      : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
+                  isLoading && "opacity-70",
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium">{opt.label}</span>
+                  <span className="shrink-0 tabular-nums text-zinc-500">
+                    {isLoading ? "…" : `score ${opt.totalScore}`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {systemSuggestion && (
+                    <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                      Sugerencia del sistema
+                    </span>
+                  )}
+                  {confirmedByUser && (
+                    <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800">
+                      Confirmado por ti
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -326,15 +429,28 @@ export function ATOView(): React.ReactElement {
   const [errorMsg, setErrorMsg] = useState("");
   /** Reenvío a /api/agent para fusionar preferencias en la misma sesión. */
   const [sessionIdForNext, setSessionIdForNext] = useState<string | null>(null);
+  /** Valores para slots pedidos por el planner (ids alineados con missingSlots). */
+  const [slotDraft, setSlotDraft] = useState<Record<string, string>>({});
   /** 0 = priorizar precio, 100 = priorizar confort (mapea a pesos 1−v/100 y v/100). */
   const [priceComfortSlider, setPriceComfortSlider] = useState(40);
   const [maxPriceUsd, setMaxPriceUsd] = useState("");
 
+  const awaitingInput = response?.phase === "awaiting_input";
+
+  useEffect(() => {
+    if (response?.phase === "awaiting_input" && response.missingSlots) {
+      setSlotDraft((prev) => {
+        const next = { ...prev };
+        for (const s of response.missingSlots!) {
+          if (next[s.id] === undefined) next[s.id] = "";
+        }
+        return next;
+      });
+    }
+  }, [response]);
+
   const submit = async (): Promise<void> => {
-    if (!message.trim() || status === "loading") return;
-    setStatus("loading");
-    setResponse(null);
-    setErrorMsg("");
+    if (status === "loading") return;
 
     const v = priceComfortSlider;
     const priceWeight = 1 - v / 100;
@@ -345,15 +461,47 @@ export function ATOView(): React.ReactElement {
         ? { maxPriceUsd: maxParsed, priceWeight, comfortWeight }
         : { priceWeight, comfortWeight };
 
+    const continuation =
+      awaitingInput &&
+      sessionIdForNext &&
+      response?.missingSlots &&
+      response.missingSlots.length > 0;
+
+    if (continuation) {
+      for (const s of response.missingSlots!) {
+        if (!slotDraft[s.id]?.trim()) {
+          setErrorMsg("Completa todos los campos solicitados.");
+          return;
+        }
+      }
+    } else if (!message.trim()) {
+      return;
+    }
+
+    setStatus("loading");
+    setErrorMsg("");
+
     try {
+      const body: Record<string, unknown> = {
+        preferences,
+      };
+      if (sessionIdForNext) {
+        body.sessionId = sessionIdForNext;
+      }
+
+      if (continuation) {
+        body.slotValues = Object.fromEntries(
+          response!.missingSlots!.map((s) => [s.id, slotDraft[s.id]!.trim()]),
+        );
+        body.message = "";
+      } else {
+        body.message = message.trim();
+      }
+
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          ...(sessionIdForNext ? { sessionId: sessionIdForNext } : {}),
-          preferences,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -364,6 +512,9 @@ export function ATOView(): React.ReactElement {
       const data = (await res.json()) as ATOResponse;
       setResponse(data);
       setSessionIdForNext(data.sessionId);
+      if (data.phase === "ready") {
+        setSlotDraft({});
+      }
       setStatus("done");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Error desconocido");
@@ -371,11 +522,23 @@ export function ATOView(): React.ReactElement {
     }
   };
 
+  const canSubmitContinue =
+    awaitingInput &&
+    sessionIdForNext &&
+    (response?.missingSlots ?? []).length > 0 &&
+    (response?.missingSlots ?? []).every((s) => slotDraft[s.id]?.trim());
+
+  const primaryDisabled =
+    status === "loading" ||
+    (!awaitingInput && !message.trim()) ||
+    (awaitingInput && !canSubmitContinue);
+
   const handleKeyDown = (
     e: React.KeyboardEvent<HTMLTextAreaElement>,
   ): void => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      void submit();
+      e.preventDefault();
+      if (!primaryDisabled) void submit();
     }
   };
 
@@ -443,6 +606,7 @@ export function ATOView(): React.ReactElement {
                 onClick={() => {
                   setSessionIdForNext(null);
                   setResponse(null);
+                  setSlotDraft({});
                 }}
                 className="text-xs text-blue-600 hover:underline shrink-0"
               >
@@ -455,10 +619,14 @@ export function ATOView(): React.ReactElement {
           <span className="text-xs text-zinc-400">⌘ + Enter para enviar</span>
           <button
             onClick={() => void submit()}
-            disabled={status === "loading" || !message.trim()}
+            disabled={primaryDisabled}
             className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === "loading" ? "Procesando…" : "Ejecutar ATO"}
+            {status === "loading"
+              ? "Procesando…"
+              : awaitingInput
+                ? "Continuar con el plan"
+                : "Ejecutar ATO"}
           </button>
         </div>
       </div>
@@ -490,7 +658,48 @@ export function ATOView(): React.ReactElement {
             {response.summary}
           </div>
 
-          {(response.adgGraphId ?? response.adgGraphVersionId) && (
+          {response.phase === "awaiting_input" && response.assistantMessage && (
+            <section className="rounded-xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-violet-700">
+                Datos pendientes
+              </h2>
+              <p className="text-sm text-violet-950">{response.assistantMessage}</p>
+              {response.missingSlots && response.missingSlots.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  {response.missingSlots.map((slot) => (
+                    <label key={slot.id} className="block text-xs text-zinc-700">
+                      <span className="font-medium text-zinc-800">{slot.label}</span>
+                      {slot.role === "destination" ? (
+                        <input
+                          type="text"
+                          value={slotDraft[slot.id] ?? ""}
+                          onChange={(e) =>
+                            setSlotDraft((d) => ({ ...d, [slot.id]: e.target.value }))
+                          }
+                          placeholder="Ciudad o destino"
+                          className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm"
+                        />
+                      ) : (
+                        <input
+                          type="date"
+                          value={slotDraft[slot.id] ?? ""}
+                          onChange={(e) =>
+                            setSlotDraft((d) => ({ ...d, [slot.id]: e.target.value }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-mono"
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="mt-3 text-xs text-violet-800">
+                Pulsa «Continuar con el plan» arriba cuando hayas rellenado los campos.
+              </p>
+            </section>
+          )}
+
+          {(response.adgGraphId ?? response.adgGraphVersionId) && response.phase === "ready" && (
             <p className="text-xs text-zinc-500 font-mono">
               ADG: graph={response.adgGraphId ?? "—"} · versión=
               {response.adgGraphVersionId ?? "—"}
@@ -498,16 +707,35 @@ export function ATOView(): React.ReactElement {
           )}
 
           {/* Plan */}
-          <PlanSection plan={response.plan} />
+          {response.phase === "ready" && <PlanSection plan={response.plan} />}
 
           {/* Simulación */}
-          <SimulationSection sim={response.simulation} />
+          <SimulationSection sim={response.simulation} phase={response.phase} />
 
           {/* Aprobaciones pendientes */}
-          <ApprovalsSection approvals={response.pendingApprovals} />
+          {response.phase === "ready" && (
+            <ApprovalsSection approvals={response.pendingApprovals} />
+          )}
 
           {/* Decisiones */}
-          <DecisionsSection decisions={response.decisions} />
+          {response.phase === "ready" && (
+            <DecisionsSection
+              decisions={response.decisions}
+              sessionId={response.sessionId}
+              graphVersionId={response.adgGraphVersionId}
+              onChoiceConfirmed={(decisionId, chosenOptionId) => {
+                setResponse((prev) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    decisions: prev.decisions.map((d) =>
+                      d.id === decisionId ? { ...d, userChosenId: chosenOptionId } : d,
+                    ),
+                  };
+                });
+              }}
+            />
+          )}
 
           {/* Audit trail */}
           <AuditSection

@@ -1,8 +1,9 @@
-import type { Plan } from "./Plan";
+import type { Plan, PlanStep } from "./Plan";
 import type { SimulationResult } from "./SimulationResult";
 import type { DecisionRecord } from "./DecisionRecord";
 import type { AuditEvent } from "./AuditEvent";
 import type { ApprovalLevel } from "./ApprovalPolicy";
+import type { PlannerMissingSlot } from "./PlannerResult";
 
 export type PendingApprovalItem = {
   stepId: string;
@@ -17,9 +18,16 @@ export type PendingApprovalItem = {
 /**
  * Respuesta completa del operador autónomo:
  * plan estructurado + simulación + decisiones + aprobaciones + auditoría.
+ *
+ * `phase: awaiting_input`: el planner pidió datos (p. ej. fechas); no hay simulación/ejecución real aún.
  */
 export type ATOResponse = {
   sessionId: string;
+  phase: "awaiting_input" | "ready";
+  /** Si el planner necesita datos del usuario (mensaje natural para la UI). */
+  assistantMessage?: string;
+  /** Campos pendientes (ids alineados con `slotValues` en el siguiente POST). */
+  missingSlots?: PlannerMissingSlot[];
   plan: Plan;
   simulation: SimulationResult;
   decisions: DecisionRecord[];
@@ -31,3 +39,37 @@ export type ATOResponse = {
   adgGraphId?: string;
   adgGraphVersionId?: string;
 };
+
+/** Plan mínimo cuando `phase === awaiting_input` (sin ejecutar simulación ni ADG real). */
+export function createPlaceholderAwaitingPlan(sessionId: string): Plan {
+  const now = new Date();
+  const step: PlanStep = {
+    id: "awaiting-input",
+    type: "propose_plan",
+    description: "Esperando fechas o datos del usuario",
+    status: "pending",
+    dependsOn: [],
+    args: {},
+    approvalRequired: false,
+  };
+  return {
+    id: "00000000-0000-4000-8000-000000000001",
+    sessionId,
+    goal: "Pendiente de datos de viaje",
+    steps: [step],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createAwaitingInputSimulationStub(): SimulationResult {
+  return {
+    planId: "",
+    totalEstimatedCost: 0,
+    breakdown: [],
+    dependencyConflicts: [],
+    feasible: false,
+    humanSummary:
+      "Completa los datos solicitados y envía de nuevo para simular y ejecutar el plan.",
+  };
+}

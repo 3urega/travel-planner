@@ -76,3 +76,29 @@ export function mergeUserTravelPreferences(
   };
   return normalizeUserTravelPreferences(merged);
 }
+
+/** Lee `gatheredSlots` persistidos en la sesión (id → valor, p. ej. fechas ISO). */
+export function readGatheredSlots(
+  preferences: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const g = preferences?.gatheredSlots;
+  if (!g || typeof g !== "object" || Array.isArray(g)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(g as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim() !== "") out[k] = v.trim();
+  }
+  return out;
+}
+
+/** Normaliza el mapa enviado por POST /api/agent. */
+export function normalizeIncomingSlotValues(
+  raw: unknown,
+): Record<string, string> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim() !== "") out[k] = v.trim();
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}

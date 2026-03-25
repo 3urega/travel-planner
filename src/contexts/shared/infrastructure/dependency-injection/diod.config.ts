@@ -20,6 +20,7 @@ import { SimulationService } from "@/contexts/travel/trip/application/simulate/S
 import { ApprovalPolicyService } from "@/contexts/travel/trip/application/approve/ApprovalPolicyService";
 import { DecisionEngine } from "@/contexts/travel/trip/application/decide/DecisionEngine";
 import { AuditLogger } from "@/contexts/travel/trip/application/audit/AuditLogger";
+import { ChooseOptionService } from "@/contexts/travel/trip/application/choose/ChooseOptionService";
 import { DecisionGraphWriter } from "@/contexts/travel/trip/application/graph/DecisionGraphWriter";
 import { GraphExecutor } from "@/contexts/travel/trip/application/graph/GraphExecutor";
 import { ATOOrchestrator } from "@/contexts/travel/trip/application/orchestrate/ATOOrchestrator";
@@ -47,6 +48,7 @@ builder.registerAndUse(SimulationService);
 builder.registerAndUse(ApprovalPolicyService);
 builder.registerAndUse(DecisionEngine);
 builder.registerAndUse(AuditLogger);
+builder.registerAndUse(ChooseOptionService);
 builder.registerAndUse(DecisionGraphWriter);
 builder.registerAndUse(GraphExecutor);
 builder.registerAndUse(ATOOrchestrator);

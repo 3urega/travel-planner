@@ -27,6 +27,8 @@ export type DecisionRecord = {
   category: string;
   options: ScoredOption[];
   chosenId: string;
+  /** Opción confirmada explícitamente por el usuario (POST /api/agent/choose); ausente si solo aplica el scoring. */
+  userChosenId?: string;
   justification: string;
   weights: DecisionWeights;
   createdAt: Date;

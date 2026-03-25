@@ -3,6 +3,7 @@ export type AuditActor = "llm" | "system" | "user";
 
 export type AuditEventType =
   | "session_created"
+  | "input_required"
   | "plan_generated"
   | "simulation_run"
   | "step_started"

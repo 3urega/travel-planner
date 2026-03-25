@@ -24,6 +24,10 @@ function decisionLogicalId(decisionId: string): string {
   return `decision:${decisionId}`;
 }
 
+function userDecisionLogicalId(systemDecisionId: string): string {
+  return `user_decision:${systemDecisionId}`;
+}
+
 /** El CHECK de `adg_graph_node.status` no incluye `in_progress` del plan. */
 function toGraphNodeStatus(stepStatus: PlanStepStatus): GraphNodeStatus {
   if (stepStatus === "in_progress") return "pending";
@@ -337,6 +341,90 @@ export class PostgresAdgGraphRepository {
     } catch (err) {
       await client.query("ROLLBACK");
       console.error("[PostgresAdgGraphRepository] appendDecisionForStep failed:", err);
+      return false;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Confirma la elección del usuario sobre una decisión automática ya persistida.
+   * Nodo `decision` con `logical_id = user_decision:{decisionId}` y arista `depends_on` hacia `decision:{decisionId}`.
+   * Si el usuario cambia de opción, actualiza el mismo nodo lógico (upsert lógico).
+   */
+  async appendUserDecision(
+    graphVersionId: string,
+    systemDecisionId: string,
+    chosenOptionId: string,
+    sessionId: string,
+  ): Promise<boolean> {
+    const autoLogical = decisionLogicalId(systemDecisionId);
+    const idMap = await this.loadLogicalIdToNodeId(graphVersionId, [autoLogical]);
+    if (!idMap?.has(autoLogical)) {
+      console.error(
+        "[PostgresAdgGraphRepository] appendUserDecision: nodo decision automática no encontrado",
+      );
+      return false;
+    }
+
+    const client = await this.pool.get().connect();
+    const now = new Date();
+    const userLogical = userDecisionLogicalId(systemDecisionId);
+    const autoNodeId = idMap.get(autoLogical)!;
+
+    try {
+      await client.query("BEGIN");
+
+      const existing = await client.query<{ id: string }>(
+        `SELECT id FROM adg_graph_node
+         WHERE graph_version_id = $1 AND logical_id = $2`,
+        [graphVersionId, userLogical],
+      );
+      const outputPayload = {
+        chosenOptionId,
+        actor: "user" as const,
+        systemDecisionId,
+      };
+
+      if (existing.rows[0]) {
+        await client.query(
+          `UPDATE adg_graph_node
+           SET output = $1::jsonb,
+               metadata = $2::jsonb
+           WHERE id = $3`,
+          [
+            JSON.stringify(outputPayload),
+            JSON.stringify({ actor: "user", phase: "user_decision", sessionId }),
+            existing.rows[0].id,
+          ],
+        );
+      } else {
+        const userNodeId = crypto.randomUUID();
+        await client.query(
+          `INSERT INTO adg_graph_node
+             (id, graph_version_id, node_type, status, logical_id, input, output, metadata, created_at)
+           VALUES ($1, $2, 'decision', 'completed', $3, '{}'::jsonb, $4::jsonb, $5::jsonb, $6)`,
+          [
+            userNodeId,
+            graphVersionId,
+            userLogical,
+            JSON.stringify(outputPayload),
+            JSON.stringify({ actor: "user", phase: "user_decision", sessionId }),
+            now,
+          ],
+        );
+        await client.query(
+          `INSERT INTO adg_graph_edge (id, graph_version_id, from_node_id, to_node_id, edge_type, created_at)
+           VALUES ($1, $2, $3, $4, 'depends_on', $5)`,
+          [crypto.randomUUID(), graphVersionId, userNodeId, autoNodeId, now],
+        );
+      }
+
+      await client.query("COMMIT");
+      return true;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("[PostgresAdgGraphRepository] appendUserDecision failed:", err);
       return false;
     } finally {
       client.release();

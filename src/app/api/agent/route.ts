@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { ATOOrchestrator } from "@/contexts/travel/trip/application/orchestrate/ATOOrchestrator";
 import { container } from "@/contexts/shared/infrastructure/dependency-injection/diod.config";
 import { HttpNextResponse } from "@/contexts/shared/infrastructure/http/HttpNextResponse";
+import { normalizeIncomingSlotValues } from "@/contexts/travel/trip/domain/UserTravelPreferences";
 import type { UserTravelPreferences } from "@/contexts/travel/trip/domain/UserTravelPreferences";
 
 const orchestrator = container.get(ATOOrchestrator);
@@ -36,26 +37,39 @@ function parsePreferences(raw: unknown): UserTravelPreferences | undefined {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  const body = await req.json() as {
+  const body = (await req.json()) as {
     message?: string;
     sessionId?: string;
     preferences?: unknown;
+    slotValues?: unknown;
   };
 
-  if (!body.message || typeof body.message !== "string" || body.message.trim() === "") {
-    return HttpNextResponse.badRequest("El campo 'message' es obligatorio.");
+  const message = typeof body.message === "string" ? body.message : "";
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
+  const slotValues = normalizeIncomingSlotValues(body.slotValues);
+
+  const isSlotContinuation =
+    sessionId !== undefined &&
+    slotValues !== undefined &&
+    Object.keys(slotValues).length > 0;
+
+  if (!message.trim() && !isSlotContinuation) {
+    return HttpNextResponse.badRequest(
+      "El campo 'message' es obligatorio, salvo continuación con sessionId y slotValues.",
+    );
   }
 
   try {
     const result = await orchestrator.run(
-      body.message.trim(),
-      typeof body.sessionId === "string" ? body.sessionId : undefined,
+      message,
+      sessionId,
       parsePreferences(body.preferences),
+      slotValues,
     );
     return HttpNextResponse.json(result);
   } catch (err) {
-    const message =
+    const errMessage =
       err instanceof Error ? err.message : "Error interno del agente.";
-    return HttpNextResponse.internalError(message);
+    return HttpNextResponse.internalError(errMessage);
   }
 }
