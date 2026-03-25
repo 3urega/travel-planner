@@ -1,3 +1,7 @@
+/**
+ * @deprecated Vista legada chat-centric. La home usa `ATOWorkspacePage`; conservar
+ * referencia o rutas de demo hasta migrar por completo.
+ */
 "use client";
 
 import { useEffect, useState } from "react";

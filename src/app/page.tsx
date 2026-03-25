@@ -1,9 +1,9 @@
-import { ATOView } from "./_components/ATOView";
+import { ATOWorkspacePage } from "./_components/ato-workspace/ATOWorkspacePage";
 
 export default function HomePage(): React.ReactElement {
   return (
-    <main className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
-      <ATOView />
+    <main className="flex min-h-screen flex-1 flex-col">
+      <ATOWorkspacePage />
     </main>
   );
 }
