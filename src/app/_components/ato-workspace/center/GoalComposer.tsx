@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
+import { PenLine } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,11 +42,29 @@ export function GoalComposer({
     slots.every((s) => slotDraft[s.id]?.trim());
 
   return (
-    <Card className="border-zinc-800/80">
-      <CardContent className="space-y-4 p-5">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+      className="ato-noise ato-glass relative overflow-hidden rounded-2xl"
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+      <CardContent className="space-y-5 p-6 md:p-8">
+        <div className="flex items-start gap-3">
+          <span className="mt-1 rounded-full border border-border bg-accent p-2 text-primary">
+            <PenLine className="size-4" strokeWidth={1.5} />
+          </span>
+          <div>
+            <p className="ato-kicker mb-1">Briefing del viaje</p>
+            <p className="font-ato-display text-xl font-medium text-foreground">
+              Escribe como si se lo contaras a un concierge de confianza
+            </p>
+          </div>
+        </div>
+
         {!awaitingInput && (
           <>
-            <Label htmlFor="ato-goal" className="text-zinc-300">
+            <Label htmlFor="ato-goal" className="sr-only">
               Objetivo del viaje
             </Label>
             <textarea
@@ -54,23 +73,26 @@ export function GoalComposer({
               onChange={(e) => onGoalChange(e.target.value)}
               disabled={loading}
               rows={4}
-              placeholder='Ej.: "Barcelona a París en Navidad, 4 días, presupuesto medio"'
-              className="w-full resize-none rounded-lg border border-zinc-700 bg-zinc-950/60 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/50 disabled:opacity-50"
+              placeholder='Ej.: “Cuatro noches entre luces y calma en Lisboa, sin madrugadas imposibles.”'
+              className="w-full resize-none rounded-xl border border-input-border bg-input px-5 py-4 text-[0.95rem] leading-relaxed text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50"
             />
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-4">
               <Button
-                variant="primary"
+                variant="cta"
                 type="button"
                 disabled={loading || !goalMessage.trim()}
                 onClick={() => void onSubmit()}
+                className="rounded-xl px-6 font-semibold tracking-wide"
               >
-                <Sparkles className="size-4" />
-                Ejecutar planificador
+                Tejer el itinerario
               </Button>
               {loading && (
-                <div className="flex flex-1 flex-col gap-2 min-w-[120px] max-w-xs">
-                  <Skeleton className="h-2 w-full" />
-                  <Skeleton className="h-2 w-4/5" />
+                <div className="flex flex-1 flex-col gap-2 min-w-[140px] max-w-xs">
+                  <Skeleton className="h-2 w-full rounded-full" />
+                  <Skeleton className="h-2 w-4/5 rounded-full" />
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Curando rutas y tono
+                  </p>
                 </div>
               )}
             </div>
@@ -78,29 +100,38 @@ export function GoalComposer({
         )}
 
         {awaitingInput && slots.length > 0 && (
-          <div className="space-y-4 border-t border-zinc-800 pt-4">
-            <p className="text-sm text-zinc-300">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-5 border-t border-border pt-6"
+          >
+            <p className="text-sm leading-relaxed text-foreground/90">
               {response?.assistantMessage}
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               {slots.map((slot: PlannerMissingSlot) => (
                 <div key={slot.id}>
-                  <Label htmlFor={`slot-${slot.id}`}>{slot.label}</Label>
+                  <Label
+                    htmlFor={`slot-${slot.id}`}
+                    className="text-xs uppercase tracking-wider"
+                  >
+                    {slot.label}
+                  </Label>
                   {slot.role === "destination" ? (
                     <Input
                       id={`slot-${slot.id}`}
-                      className="mt-1"
+                      className="mt-2 rounded-lg"
                       value={slotDraft[slot.id] ?? ""}
                       onChange={(e) =>
                         onSlotChange(slot.id, e.target.value)
                       }
-                      placeholder="Ciudad o destino"
+                      placeholder="Ciudad destino"
                     />
                   ) : (
                     <Input
                       id={`slot-${slot.id}`}
                       type="date"
-                      className="mt-1 font-mono"
+                      className="mt-2 rounded-lg font-mono text-sm"
                       value={slotDraft[slot.id] ?? ""}
                       onChange={(e) =>
                         onSlotChange(slot.id, e.target.value)
@@ -111,16 +142,17 @@ export function GoalComposer({
               ))}
             </div>
             <Button
-              variant="primary"
+              variant="cta"
               type="button"
               disabled={loading || !canContinueSlots}
               onClick={() => void onContinueSlots()}
+              className="rounded-xl font-semibold"
             >
-              Continuar con el plan
+              Continuar el relato del viaje
             </Button>
-          </div>
+          </motion.div>
         )}
       </CardContent>
-    </Card>
+    </motion.div>
   );
 }

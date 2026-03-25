@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { motion } from "framer-motion";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
@@ -20,32 +21,37 @@ function levelStyle(
 
 function AuditList({ events }: { events: AuditEvent[] }): React.ReactElement {
   const actorColors: Record<string, string> = {
-    user: "bg-zinc-700 text-zinc-200",
-    system: "bg-emerald-950/80 text-emerald-300",
-    llm: "bg-violet-950/70 text-violet-200",
+    user:
+      "border border-border bg-card-elevated text-foreground",
+    system:
+      "border border-border bg-accent text-accent-foreground",
+    llm:
+      "border border-border bg-[color-mix(in_srgb,var(--card-cool)_88%,var(--muted))] text-foreground",
   };
 
   return (
-    <ScrollArea className="h-[280px] rounded-lg border border-zinc-800/80">
-      <ol className="space-y-2 p-3">
+    <ScrollArea className="h-[260px] rounded-xl border border-[color-mix(in_srgb,var(--secondary-foreground)_12%,var(--border))] bg-[color-mix(in_srgb,var(--card-cool)_65%,var(--card-elevated))]">
+      <ol className="space-y-3 p-4">
         {events.length === 0 && (
-          <li className="text-xs text-zinc-600">Sin eventos aún.</li>
+          <li className="text-xs text-muted-foreground">
+            Aún no hay entradas en el registro.
+          </li>
         )}
         {events.map((e) => (
-          <li key={e.id} className="flex flex-col gap-0.5 text-xs">
+          <li key={e.id} className="flex flex-col gap-1 text-xs">
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
-                  actorColors[e.actor] ?? "bg-zinc-800 text-zinc-400",
+                  "rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                  actorColors[e.actor] ?? "bg-muted text-muted-foreground",
                 )}
               >
                 {e.actor}
               </span>
-              <span className="font-medium text-zinc-300">{e.type}</span>
+              <span className="font-medium text-foreground/90">{e.type}</span>
             </div>
             {e.reason && (
-              <span className="truncate text-zinc-600">{e.reason}</span>
+              <span className="text-muted-foreground">{e.reason}</span>
             )}
           </li>
         ))}
@@ -63,55 +69,82 @@ export function InspectorPanel({
   const events = response?.auditEvents ?? [];
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card className="border-zinc-800/80">
-        <CardHeader>
-          <CardTitle>Cola de aprobación</CardTitle>
+    <div className="flex flex-col gap-5">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.03 }}
+        className="ato-noise ato-glass-cool rounded-2xl"
+      >
+        <CardHeader className="pb-2">
+          <span className="ato-kicker mb-1">Líneas rojas</span>
+          <CardTitle className="font-ato-display normal-case tracking-normal text-lg text-card-cool-foreground">
+            Lo que el sistema no cruza solo
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {approvals.length === 0 ? (
-            <p className="text-xs text-zinc-500">
-              No hay pasos bloqueados por política.
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Nadie frena el plan por política en este instante — si algo
+              aparece, lo verás aquí, claro como una nota en el margen.
             </p>
           ) : (
             <ul className="space-y-3">
               {approvals.map((a) => (
                 <li
                   key={a.stepId}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3"
+                  className="rounded-xl border border-[color-mix(in_srgb,var(--secondary-foreground)_12%,var(--border))] bg-card-elevated/95 p-4 shadow-[var(--shadow-soft)]"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-zinc-200">
+                    <span className="text-xs font-medium text-foreground">
                       {a.description}
                     </span>
                     <Badge variant={levelStyle(a.level)}>{a.level}</Badge>
                   </div>
-                  <p className="mt-1 text-[11px] text-zinc-500">{a.reason}</p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                    {a.reason}
+                  </p>
                 </li>
               ))}
             </ul>
           )}
         </CardContent>
-      </Card>
+      </motion.div>
 
-      <Card className="border-zinc-800/80">
-        <CardHeader>
-          <CardTitle>Estado ADG</CardTitle>
+      <div className="ato-noise ato-glass-cool rounded-2xl">
+        <CardHeader className="pb-2">
+          <span className="ato-kicker mb-1">Huella técnica</span>
+          <CardTitle className="font-ato-display normal-case tracking-normal text-lg text-card-cool-foreground">
+            Grafo de decisiones
+          </CardTitle>
         </CardHeader>
-        <CardContent className="font-mono text-[11px] text-zinc-500">
-          <p>graph: {response?.adgGraphId ?? "—"}</p>
-          <p>version: {response?.adgGraphVersionId ?? "—"}</p>
+        <CardContent className="space-y-1 font-mono text-[11px] text-muted-foreground">
+          <p>
+            <span className="text-[color-mix(in_srgb,var(--primary)_32%,var(--muted-foreground))]">
+              graph
+            </span>{" "}
+            {response?.adgGraphId ?? "—"}
+          </p>
+          <p>
+            <span className="text-[color-mix(in_srgb,var(--primary)_32%,var(--muted-foreground))]">
+              version
+            </span>{" "}
+            {response?.adgGraphVersionId ?? "—"}
+          </p>
         </CardContent>
-      </Card>
+      </div>
 
-      <Card className="border-zinc-800/80">
-        <CardHeader>
-          <CardTitle>Auditoría</CardTitle>
+      <div className="ato-noise ato-glass-cool rounded-2xl">
+        <CardHeader className="pb-2">
+          <span className="ato-kicker mb-1">Cronología</span>
+          <CardTitle className="font-ato-display normal-case tracking-normal text-lg text-card-cool-foreground">
+            Quién dijo qué, y cuándo
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <AuditList events={events} />
         </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

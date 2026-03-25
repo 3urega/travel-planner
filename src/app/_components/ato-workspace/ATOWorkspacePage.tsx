@@ -76,7 +76,7 @@ export function ATOWorkspacePage(): React.ReactElement {
         />
       }
       center={
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-8 md:gap-10">
           <WorkspaceHero response={response} />
           <GoalComposer
             goalMessage={goalMessage}
@@ -99,7 +99,7 @@ export function ATOWorkspacePage(): React.ReactElement {
           {showPlanStrip && <PlanStrip plan={response!.plan} />}
           {error && status === "error" && (
             <div
-              className="rounded-lg border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200"
+              className="rounded-2xl border border-[color-mix(in_srgb,var(--destructive)_28%,var(--border))] bg-destructive-subtle px-5 py-4 font-ato-display text-sm font-medium text-destructive shadow-[var(--shadow-soft)]"
               role="alert"
             >
               {error}

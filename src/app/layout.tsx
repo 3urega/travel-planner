@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Cormorant_Garamond, Geist_Mono, Outfit } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const displaySerif = Cormorant_Garamond({
+  variable: "--font-ato-display",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const uiSans = Outfit({
+  variable: "--font-ato-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const geistMono = Geist_Mono({
@@ -25,10 +32,10 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${displaySerif.variable} ${uiSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-50">
+      <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
       </body>
     </html>

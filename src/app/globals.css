@@ -1,24 +1,195 @@
 @import "tailwindcss";
 
+/*
+  Premium travel workspace — semantic tokens (European luxury travel-tech).
+  Palette: warm ivory + steel-blue primary + sage / amber / champagne details.
+*/
+
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: rgba(24, 24, 27, 0.55);
-  --card-foreground: #fafafa;
-  --muted: #a1a1aa;
-  --border: rgba(63, 63, 70, 0.9);
-  --accent: #10b981;
+  /* Core (spec) */
+  --background: hsl(44 33% 96%);
+  --foreground: hsl(20 10% 11%);
+  --card: hsl(40 43% 98%);
+  --card-foreground: hsl(20 10% 11%);
+  --muted: hsl(36 22% 91%);
+  --muted-foreground: hsl(28 8% 41%);
+  --border: hsl(34 19% 80%);
+  --input: hsl(34 19% 84%);
+  --ring: hsl(212 25% 47%);
+
+  --primary: hsl(212 25% 47%);
+  --primary-hover: hsl(212 27% 39%);
+  --primary-foreground: hsl(0 0% 100%);
+
+  --secondary: hsl(212 36% 91%);
+  --secondary-foreground: hsl(214 26% 27%);
+
+  --accent: hsl(210 29% 88%);
+  --accent-foreground: hsl(214 26% 27%);
+
+  --success: hsl(132 16% 43%);
+  --success-foreground: hsl(0 0% 100%);
+  --success-subtle: hsl(132 25% 92%);
+
+  --warning: hsl(37 47% 45%);
+  --warning-foreground: hsl(35 42% 22%);
+  --warning-subtle: hsl(39 54% 91%);
+
+  --destructive: hsl(2 53% 52%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --destructive-subtle: hsl(2 42% 94%);
+
+  --luxury: hsl(40 41% 60%);
+  --luxury-soft: hsl(40 38% 92%);
+
+  /* Derived surfaces */
+  --card-elevated: hsl(0 0% 100%);
+  --border-subtle: hsl(38 24% 90%);
+  --input-border: hsl(34 16% 76%);
+
+  --card-cool: color-mix(in srgb, var(--secondary) 86%, var(--background));
+  --card-cool-foreground: hsl(214 26% 27%);
+
+  /* Primary tint — selection, active stage, key highlights (spec rule) */
+  --primary-subtle: color-mix(in srgb, var(--primary) 8%, var(--card));
+  --primary-border: color-mix(in srgb, var(--primary) 26%, var(--border));
+  --primary-wash: color-mix(in srgb, var(--primary) 5%, var(--background));
+
+  /* Soft structural accent (cool editorial fields) */
+  --accent-border: color-mix(in srgb, var(--primary) 16%, var(--border));
+
+  --shadow-soft: 0 1px 2px -1px hsl(20 10% 11% / 0.05),
+    0 12px 32px -16px hsl(212 18% 28% / 0.08);
+  --shadow-elevated: 0 1px 0 hsl(0 0% 100% / 0.85) inset,
+    0 18px 44px -20px hsl(212 22% 32% / 0.1);
+  --shadow-selected: 0 1px 0 hsl(0 0% 100% / 0.88) inset,
+    0 12px 32px -14px hsl(212 25% 47% / 0.14);
+
+  /* Legacy aliases */
+  --ato-bg: var(--background);
+  --ato-ink: var(--foreground);
+  --ato-ink-muted: var(--muted-foreground);
+  --ato-border: var(--border);
+  --ato-border-strong: var(--input-border);
+  --ato-champagne: var(--luxury);
+  --ato-gold: var(--luxury);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-input: var(--input);
+  --color-input-border: var(--input-border);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-primary-border: var(--primary-border);
+  --color-primary-wash: var(--primary-wash);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-border: var(--accent-border);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-subtle: var(--destructive-subtle);
+  --color-luxury: var(--luxury);
+  --color-luxury-soft: var(--luxury-soft);
+  --color-card-elevated: var(--card-elevated);
+  --color-card-cool: var(--card-cool);
+  --color-card-cool-foreground: var(--card-cool-foreground);
+  --font-sans: var(--font-ato-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
+}
+
+@keyframes ato-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.78;
+    transform: scale(1.02);
+  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ato-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-ato-display {
+  font-family: var(--font-ato-display), ui-serif, Georgia, serif;
+}
+
+/* Warm editorial panels */
+.ato-glass {
+  background: linear-gradient(
+    168deg,
+    var(--card) 0%,
+    color-mix(in srgb, var(--card) 82%, var(--background)) 100%
+  );
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+
+.ato-glass-elevated {
+  background: linear-gradient(
+    168deg,
+    var(--card-elevated) 0%,
+    color-mix(in srgb, var(--card) 90%, var(--luxury-soft)) 100%
+  );
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Inspector: cooler, analytical */
+.ato-glass-cool {
+  background: linear-gradient(
+    180deg,
+    var(--card-cool) 0%,
+    color-mix(in srgb, var(--card-cool) 88%, var(--background)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--secondary-foreground) 10%, var(--border));
+  box-shadow: var(--shadow-soft);
+}
+
+.ato-noise {
+  position: relative;
+}
+
+.ato-noise::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0.028;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Champagne kicker — spare, editorial */
+.ato-kicker {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--luxury) 28%, var(--muted-foreground));
 }

@@ -5,19 +5,22 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-[color,box-shadow,transform,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "bg-zinc-100 text-zinc-900 shadow-sm hover:bg-white",
+          "bg-primary text-primary-foreground shadow-sm hover:bg-[var(--primary-hover)]",
         primary:
-          "bg-emerald-600 text-white shadow-sm hover:bg-emerald-500",
+          "bg-primary text-primary-foreground shadow-sm hover:bg-[var(--primary-hover)]",
+        cta:
+          "bg-primary text-primary-foreground shadow-[0_10px_28px_-10px_hsl(212_25%_47%_/_0.35)] hover:bg-[var(--primary-hover)] hover:-translate-y-px active:translate-y-0",
         outline:
-          "border border-zinc-600 bg-transparent text-zinc-100 hover:bg-zinc-800/80",
-        ghost: "text-zinc-300 hover:bg-zinc-800/80 hover:text-zinc-50",
+          "border border-border bg-transparent text-foreground hover:bg-muted/70",
+        ghost:
+          "text-foreground hover:bg-muted/80 hover:text-foreground",
         subtle:
-          "bg-zinc-800/80 text-zinc-200 border border-zinc-700/80 hover:bg-zinc-700/80",
+          "border border-border bg-secondary text-secondary-foreground hover:bg-[color-mix(in_srgb,var(--secondary)_88%,var(--muted))]",
       },
       size: {
         default: "h-10 px-4 py-2",

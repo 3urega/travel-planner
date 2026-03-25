@@ -2,13 +2,31 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { ArrowRight, Hotel, Plane } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
 import type { PendingSelectionItem } from "@/contexts/travel/trip/domain/GraphExecutionCheckpoint";
 import type { DecisionRecord } from "@/contexts/travel/trip/domain/DecisionRecord";
 import { cn } from "@/lib/utils";
+
+const listVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.07, delayChildren: 0.06 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 14, filter: "blur(6px)" },
+  show: {
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const },
+  },
+};
 
 export function OptionsStage({
   response,
@@ -26,91 +44,144 @@ export function OptionsStage({
     response.decisions.length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <AnimatePresence mode="wait">
         {pending.length > 0 && (
           <motion.div
             key="pending"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.25 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.35 }}
           >
             {pending.map((item) => (
-              <Card
+              <div
                 key={item.selectionRequestLogicalId}
-                className="border-amber-900/50"
+                className="ato-noise ato-glass relative overflow-hidden rounded-2xl"
               >
-                <CardHeader>
-                  <CardTitle className="text-amber-100/90">
-                    {item.selectionKind === "flight" ? "Vuelos" : "Hoteles"}
-                  </CardTitle>
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary-wash via-transparent to-transparent" />
+                <CardHeader className="relative pb-2 pt-7 md:px-8">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-accent text-primary shadow-[var(--shadow-soft)]">
+                      {item.selectionKind === "flight" ? (
+                        <Plane className="size-5" strokeWidth={1.35} />
+                      ) : (
+                        <Hotel className="size-5" strokeWidth={1.35} />
+                      )}
+                    </span>
+                    <div>
+                      <CardTitle className="font-ato-display normal-case tracking-normal text-xl font-medium text-foreground md:text-2xl">
+                        {item.selectionKind === "flight"
+                          ? "Tramos aéreos"
+                          : "Estancia"}
+                      </CardTitle>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {item.title}
+                      </p>
+                    </div>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="mb-2 text-sm text-zinc-400">{item.title}</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                <CardContent className="relative space-y-4 pb-8 md:px-8">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Elige con intención — el plan sigue en silencio hasta tu
+                    voto
+                  </p>
+                  <motion.div
+                    className="grid gap-3 sm:grid-cols-2"
+                    variants={listVariants}
+                    initial="hidden"
+                    animate="show"
+                  >
                     {item.options.map((opt) => {
                       const k = `${item.selectionRequestLogicalId}:${opt.id}`;
                       const loading = busyKey === k;
                       return (
-                        <Button
+                        <motion.button
                           key={opt.id}
-                          variant="subtle"
-                          className={cn(
-                            "h-auto min-h-[4rem] flex-col items-start gap-1 py-3 text-left",
-                            loading && "opacity-70",
-                          )}
+                          type="button"
+                          variants={itemVariants}
                           disabled={Boolean(busyKey)}
                           onClick={() => onSelectOption(item, opt.id)}
+                          whileHover={
+                            busyKey ? undefined : { y: -2, scale: 1.008 }
+                          }
+                          whileTap={busyKey ? undefined : { scale: 0.996 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 420,
+                            damping: 28,
+                          }}
+                          className={cn(
+                            "group relative flex min-h-[5.5rem] flex-col items-start gap-2 rounded-xl border border-border bg-card-elevated px-5 py-4 text-left shadow-[0_1px_0_hsl(0_0%_100%_/_0.75)_inset,var(--shadow-soft)] transition-[border-color,box-shadow,background-color]",
+                            "hover:border-primary-border hover:bg-primary-subtle",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                            loading &&
+                              "border-primary-border bg-primary-subtle shadow-[var(--shadow-selected)] ring-2 ring-ring/35",
+                          )}
                         >
-                          <span className="font-medium text-zinc-100">
+                          <span className="font-ato-display text-lg font-medium leading-snug text-foreground">
                             {opt.label}
                           </span>
                           {opt.priceUsd !== undefined && (
-                            <span className="text-xs tabular-nums text-zinc-500">
-                              ${opt.priceUsd}
+                            <span className="tabular-nums text-sm font-medium text-primary">
+                              Desde ${opt.priceUsd}
                             </span>
                           )}
-                          {loading && (
-                            <span className="text-xs text-emerald-400">
-                              Aplicando…
-                            </span>
-                          )}
-                        </Button>
+                          <span className="mt-auto flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            {loading ? (
+                              <>Aplicando tu elección…</>
+                            ) : (
+                              <>
+                                Seleccionar
+                                <ArrowRight className="size-3.5 opacity-70 transition-transform group-hover:translate-x-0.5" />
+                              </>
+                            )}
+                          </span>
+                        </motion.button>
                       );
                     })}
-                  </div>
+                  </motion.div>
                 </CardContent>
-              </Card>
+              </div>
             ))}
           </motion.div>
         )}
       </AnimatePresence>
 
       {showDecisions && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Alternativas evaluadas</CardTitle>
+        <div className="ato-noise ato-glass rounded-2xl">
+          <CardHeader className="md:px-8">
+            <span className="ato-kicker mb-2">Memoria de la mesa</span>
+            <CardTitle className="font-ato-display normal-case tracking-normal text-xl text-foreground">
+              Cómo leímos las alternativas
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5 md:px-8 md:pb-8">
             {response!.decisions.map((d: DecisionRecord) => (
-              <div key={d.id} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                <p className="text-xs font-medium capitalize text-zinc-400">
+              <div
+                key={d.id}
+                className="rounded-xl border border-border bg-card-elevated px-4 py-4 shadow-[var(--shadow-soft)]"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   {d.category}
                 </p>
-                <p className="mt-1 text-xs text-zinc-500">{d.justification}</p>
-                <ul className="mt-2 space-y-1">
+                <p className="mt-2 text-sm leading-relaxed text-foreground/90">
+                  {d.justification}
+                </p>
+                <ul className="mt-4 space-y-2 border-t border-border pt-3">
                   {d.options.slice(0, 4).map((o) => (
                     <li
                       key={o.id}
                       className={cn(
-                        "text-xs",
-                        o.chosen ? "text-emerald-300" : "text-zinc-400",
+                        "flex justify-between gap-3 text-sm",
+                        o.chosen
+                          ? "font-medium text-primary"
+                          : "text-muted-foreground",
                       )}
                     >
-                      {o.label}{" "}
-                      <span className="tabular-nums text-zinc-600">
-                        ({o.totalScore.toFixed(2)})
+                      <span>{o.label}</span>
+                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                        {o.totalScore.toFixed(2)}
                       </span>
                     </li>
                   ))}
@@ -118,7 +189,7 @@ export function OptionsStage({
               </div>
             ))}
           </CardContent>
-        </Card>
+        </div>
       )}
     </div>
   );

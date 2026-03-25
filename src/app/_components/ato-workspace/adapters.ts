@@ -10,7 +10,14 @@ export type HeaderTripMeta = {
 
 export type TripStatusBadge = {
   label: string;
-  variant: "default" | "success" | "warning" | "accent" | "muted";
+  variant:
+    | "default"
+    | "secondary"
+    | "success"
+    | "warning"
+    | "muted"
+    | "accent"
+    | "luxury";
 };
 
 const STEP_ORDER: PlanStepType[] = [
@@ -78,7 +85,7 @@ export function buildTripStatusBadge(
   }
   switch (response.phase) {
     case "awaiting_input":
-      return { label: "Planificación", variant: "accent" };
+      return { label: "Planificación", variant: "default" };
     case "awaiting_selection":
       return { label: "Esperando tu elección", variant: "warning" };
     case "ready":
