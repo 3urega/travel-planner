@@ -14,8 +14,10 @@ import { PostgresSessionRepository } from "@/contexts/travel/trip/infrastructure
 import { PostgresAuditRepository } from "@/contexts/travel/trip/infrastructure/postgres/PostgresAuditRepository";
 import { PostgresAdgGraphRepository } from "@/contexts/travel/trip/infrastructure/postgres/PostgresAdgGraphRepository";
 
-// Travel: Application services
-import { PlannerService } from "@/contexts/travel/trip/application/plan/PlannerService";
+// Travel: Domain ports + Application
+import { TravelPlanDraftPort } from "@/contexts/travel/trip/domain/TravelPlanDraftPort";
+import { OpenAiTravelPlanDraftAdapter } from "@/contexts/travel/trip/infrastructure/ai/OpenAiTravelPlanDraftAdapter";
+import { GenerateTravelPlan } from "@/contexts/travel/trip/application/generate-travel-plan/GenerateTravelPlan";
 import { SimulationService } from "@/contexts/travel/trip/application/simulate/SimulationService";
 import { ApprovalPolicyService } from "@/contexts/travel/trip/application/approve/ApprovalPolicyService";
 import { DecisionEngine } from "@/contexts/travel/trip/application/decide/DecisionEngine";
@@ -37,6 +39,9 @@ builder.registerAndUse(PingPostgres);
 
 // AI
 builder.registerAndUse(OpenAIClient);
+builder
+  .register(TravelPlanDraftPort)
+  .useClass(OpenAiTravelPlanDraftAdapter);
 
 // Postgres repos (travel)
 builder.registerAndUse(PostgresSessionRepository);
@@ -44,7 +49,7 @@ builder.registerAndUse(PostgresAuditRepository);
 builder.registerAndUse(PostgresAdgGraphRepository);
 
 // Application services (travel)
-builder.registerAndUse(PlannerService);
+builder.registerAndUse(GenerateTravelPlan);
 builder.registerAndUse(SimulationService);
 builder.registerAndUse(ApprovalPolicyService);
 builder.registerAndUse(DecisionEngine);

@@ -2,7 +2,7 @@ import crypto from "crypto";
 
 import { Service } from "diod";
 
-import { PlannerService } from "../plan/PlannerService";
+import { GenerateTravelPlan } from "../generate-travel-plan/GenerateTravelPlan";
 import { SimulationService } from "../simulate/SimulationService";
 import { AuditLogger } from "../audit/AuditLogger";
 import { DecisionGraphWriter } from "../graph/DecisionGraphWriter";
@@ -51,7 +51,7 @@ import {
 @Service()
 export class ATOOrchestrator {
   constructor(
-    private readonly plannerService: PlannerService,
+    private readonly generateTravelPlan: GenerateTravelPlan,
     private readonly simulationService: SimulationService,
     private readonly auditLogger: AuditLogger,
     private readonly sessionRepository: PostgresSessionRepository,
@@ -127,7 +127,7 @@ export class ATOOrchestrator {
       });
     }
 
-    const plannerResult = await this.plannerService.generate(
+    const plannerResult = await this.generateTravelPlan.execute(
       narrativeForPlanner,
       sid,
       resolvedPrefs,
