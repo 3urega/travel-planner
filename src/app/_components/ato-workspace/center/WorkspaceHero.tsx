@@ -16,6 +16,16 @@ function heroCopy(
   badge: string;
 } {
   if (stage === "define_trip") {
+    if (response?.phase === "blocked") {
+      return {
+        title: "Hay que ajustar el tramo aéreo",
+        subtitle:
+          response.assistantMessage ??
+          response.flightSearchBlock?.reason ??
+          "Revisa origen, destino y fechas; no se mostró catálogo de hoteles hasta tener vuelos.",
+        badge: "Vuelos",
+      };
+    }
     if (!response || response.phase === "awaiting_input") {
       return {
         title: "Empecemos por el viaje que imaginas",

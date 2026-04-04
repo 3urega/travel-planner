@@ -5,7 +5,7 @@ export type ToolExecutionResult =
   | { success: false; error: string; attempts: number };
 
 const MAX_RETRIES = 3;
-const TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 5000;
 /** Base para backoff exponencial: 100ms, 200ms, 400ms entre reintentos. */
 const BACKOFF_BASE_MS = 100;
 
@@ -26,7 +26,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * Ejecuta una herramienta con reintentos y timeout.
  * - Hasta 3 intentos.
  * - Backoff exponencial entre reintentos.
- * - Timeout de 5 s por intento.
+ * - Timeout por defecto 5 s; `tool.timeoutMs` lo sobrescribe (p. ej. búsqueda de vuelos).
  * - Devuelve un resultado tipado (success/failure) sin lanzar excepción.
  */
 export async function executeWithResilience(
@@ -34,10 +34,11 @@ export async function executeWithResilience(
   args: Record<string, unknown>,
 ): Promise<ToolExecutionResult> {
   let lastError = "Unknown error";
+  const timeoutMs = tool.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const data = await withTimeout(tool.execute(args), TIMEOUT_MS);
+      const data = await withTimeout(tool.execute(args), timeoutMs);
       return { success: true, data, attempts: attempt };
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);

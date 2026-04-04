@@ -1,0 +1,3 @@
+# Dependencias del bridge `fli_search_bridge.py` (paquete PyPI `flights`, import `fli`).
+# Entorno sugerido: `python3 -m venv .venv-fli && .venv-fli/bin/pip install -r requirements-fli.txt`
+flights>=0.8.2,<0.9

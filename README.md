@@ -94,6 +94,15 @@ Carpetas principales:
 
 Convenciones detalladas de código y capas: **`docs/`** y **`AGENTS.md`**.
 
+## Búsqueda de vuelos (mock vs proveedor real)
+
+El paso `search_flights` usa un **puerto de dominio** con implementación configurable:
+
+- Por defecto: **mock** (sin Python).
+- Opcional: **`fli`** vía script Python y variable `FLIGHT_SEARCH_PROVIDER` (ver `.env.example`).
+
+Instrucciones de prueba y requisitos: **[`docs/flight-search-provider.md`](docs/flight-search-provider.md)**.
+
 ## Licencia / equipo
 
 Proyecto privado (`"private": true` en `package.json`). Ajustad esta sección según vuestra política interna.

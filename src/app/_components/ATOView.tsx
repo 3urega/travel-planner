@@ -112,10 +112,12 @@ function SimulationSection({
   phase,
 }: {
   sim: SimulationResult;
-  phase?: "awaiting_input" | "awaiting_selection" | "ready";
+  phase?: "awaiting_input" | "awaiting_selection" | "ready" | "blocked";
 }): React.ReactElement {
   const awaiting =
-    phase === "awaiting_input" || phase === "awaiting_selection";
+    phase === "awaiting_input" ||
+    phase === "awaiting_selection" ||
+    phase === "blocked";
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
@@ -585,7 +587,9 @@ export function ATOView(): React.ReactElement {
   const awaitingSelection = response?.phase === "awaiting_selection";
   const showPlanPhase =
     response !== null &&
-    (response.phase === "ready" || response.phase === "awaiting_selection");
+    (response.phase === "ready" ||
+      response.phase === "awaiting_selection" ||
+      response.phase === "blocked");
 
   useEffect(() => {
     if (response?.phase === "awaiting_input" && response.missingSlots) {
@@ -655,7 +659,11 @@ export function ATOView(): React.ReactElement {
       const data = (await res.json()) as ATOResponse;
       setResponse(data);
       setSessionIdForNext(data.sessionId);
-      if (data.phase === "ready" || data.phase === "awaiting_selection") {
+      if (
+        data.phase === "ready" ||
+        data.phase === "awaiting_selection" ||
+        data.phase === "blocked"
+      ) {
         setSlotDraft({});
       }
       setStatus("done");
@@ -839,6 +847,19 @@ export function ATOView(): React.ReactElement {
               )}
               <p className="mt-3 text-xs text-violet-800">
                 Pulsa «Continuar con el plan» arriba cuando hayas rellenado los campos.
+              </p>
+            </section>
+          )}
+
+          {response.phase === "blocked" && response.assistantMessage && (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-800">
+                Búsqueda de vuelos detenida
+              </h2>
+              <p className="text-sm text-amber-950">{response.assistantMessage}</p>
+              <p className="mt-3 text-xs text-amber-900">
+                Ajusta origen, destino o fechas en el mensaje y vuelve a ejecutar el ATO. No se ha
+                pasado a hoteles.
               </p>
             </section>
           )}

@@ -6,6 +6,13 @@ import type { ApprovalLevel } from "./ApprovalPolicy";
 import type { PlannerMissingSlot } from "./PlannerResult";
 import type { PendingSelectionItem } from "./GraphExecutionCheckpoint";
 
+/** Bloqueo tras `search_flights` sin ofertas o con fallo del tool; no se ejecutan pasos de hotel. */
+export type FlightSearchBlockInfo = {
+  stepId: string;
+  code: "flight_tool_failed" | "no_flight_offers";
+  reason: string;
+};
+
 export type PendingApprovalItem = {
   stepId: string;
   stepType: string;
@@ -24,7 +31,9 @@ export type PendingApprovalItem = {
  */
 export type ATOResponse = {
   sessionId: string;
-  phase: "awaiting_input" | "awaiting_selection" | "ready";
+  phase: "awaiting_input" | "awaiting_selection" | "ready" | "blocked";
+  /** Presente si `phase === "blocked"` tras fallo u ofertas vacías en vuelos. */
+  flightSearchBlock?: FlightSearchBlockInfo;
   /** Si el planner necesita datos del usuario (mensaje natural para la UI). */
   assistantMessage?: string;
   /** Campos pendientes (ids alineados con `slotValues` en el siguiente POST). */

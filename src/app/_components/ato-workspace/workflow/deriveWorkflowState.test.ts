@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
+import type { ATOResponse, FlightSearchBlockInfo } from "@/contexts/travel/trip/domain/ATOResponse";
 import {
   createAwaitingInputSimulationStub,
   createAwaitingSelectionSimulationStub,
@@ -56,6 +56,25 @@ describe("deriveWorkflowState", () => {
     const s = deriveWorkflowState(null);
     expect(s.currentStage).toBe("define_trip");
     expect(s.completedStages).toEqual([]);
+  });
+
+  it("define_trip y bloqueo de vuelo marca isFlightSearchBlocked", () => {
+    const block: FlightSearchBlockInfo = {
+      stepId: "sf",
+      code: "no_flight_offers",
+      reason: "Sin vuelos",
+    };
+    const s = deriveWorkflowState(
+      baseResponse({
+        phase: "blocked",
+        flightSearchBlock: block,
+        assistantMessage: "Sin vuelos. Reintenta.",
+        simulation: createAwaitingInputSimulationStub(),
+      }),
+      { hasGoalText: true },
+    );
+    expect(s.currentStage).toBe("define_trip");
+    expect(s.isFlightSearchBlocked).toBe(true);
   });
 
   it("define_trip en awaiting_input", () => {

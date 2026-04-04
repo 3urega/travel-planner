@@ -3,8 +3,8 @@ import type OpenAI from "openai";
 
 import { evaluateApproval } from "../../domain/ApprovalGuard";
 import type { AgentResponse, ToolTrace, TravelStep } from "../../domain/TravelPlan";
-import { getToolSchemas, travelTools } from "../../infrastructure/tools/MockTravelTools";
 import { OpenAIClient } from "../../infrastructure/ai/OpenAIClient";
+import { TravelToolCatalog } from "../../infrastructure/tools/TravelToolCatalog";
 
 /**
  * Caso de uso principal del “agente de viajes”.
@@ -24,7 +24,10 @@ import { OpenAIClient } from "../../infrastructure/ai/OpenAIClient";
  */
 @Service()
 export class TravelPlannerUseCase {
-  constructor(private readonly openAIClient: OpenAIClient) {}
+  constructor(
+    private readonly openAIClient: OpenAIClient,
+    private readonly travelToolCatalog: TravelToolCatalog,
+  ) {}
 
   async plan(userMessage: string): Promise<AgentResponse> {
     // Cliente HTTP hacia OpenAI u Ollama (API compatible). El modelo concreto viene de env (ej. llama3.1:8b).
@@ -32,7 +35,8 @@ export class TravelPlannerUseCase {
     const model = this.openAIClient.getModel();
 
     // Esquemas JSON que el modelo ve como “funciones disponibles”. No ejecutan nada solos: solo describen qué puede pedir.
-    const toolSchemas = getToolSchemas();
+    const toolSchemas = this.travelToolCatalog.getToolSchemas();
+    const travelTools = this.travelToolCatalog.getTools();
 
     /**
      * Historial de la conversación en formato que entiende la API de chat.

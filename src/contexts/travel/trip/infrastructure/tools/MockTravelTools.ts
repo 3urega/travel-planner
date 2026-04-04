@@ -5,14 +5,9 @@ export type ToolDefinition = {
   schema: OpenAI.Chat.ChatCompletionTool;
   execute: (args: Record<string, unknown>) => Promise<unknown>;
   estimateCost?: (args: Record<string, unknown>) => number | undefined;
+  /** Timeout por tool (p. ej. búsquedas lentas). Si falta, usa el default del ejecutor. */
+  timeoutMs?: number;
 };
-
-const searchFlightsSchema = z.object({
-  from: z.string(),
-  to: z.string(),
-  date: z.string(),
-  budget: z.number().optional(),
-});
 
 const searchHotelsSchema = z.object({
   city: z.string(),
@@ -27,35 +22,11 @@ const bookFlightSchema = z.object({
   cost: z.number(),
 });
 
-export const travelTools: Record<string, ToolDefinition> = {
-  search_flights: {
-    schema: {
-      type: "function",
-      function: {
-        name: "search_flights",
-        description: "Busca vuelos disponibles entre dos ciudades.",
-        parameters: {
-          type: "object",
-          properties: {
-            from: { type: "string", description: "Ciudad de origen" },
-            to: { type: "string", description: "Ciudad de destino" },
-            date: { type: "string", description: "Fecha de vuelo (YYYY-MM-DD)" },
-            budget: { type: "number", description: "Presupuesto máximo en USD" },
-          },
-          required: ["from", "to", "date"],
-        },
-      },
-    },
-    execute: async (rawArgs: Record<string, unknown>): Promise<unknown> => {
-      const args = searchFlightsSchema.parse(rawArgs);
-      return [
-        { id: "FL001", airline: "Iberia", price: 320, departure: "08:00", arrival: "16:30", from: args.from, to: args.to, date: args.date },
-        { id: "FL002", airline: "Air Europa", price: 280, departure: "11:45", arrival: "20:15", from: args.from, to: args.to, date: args.date },
-        { id: "FL003", airline: "Ryanair", price: 150, departure: "06:00", arrival: "14:30", from: args.from, to: args.to, date: args.date },
-      ];
-    },
-  },
-
+/**
+ * Tools mock que no pasan por {@link FlightSearchPort} (hoteles, reservas).
+ * `search_flights` la construye {@link TravelToolCatalog}.
+ */
+export const staticMockTravelToolDefinitions: Record<string, ToolDefinition> = {
   search_hotels: {
     schema: {
       type: "function",
@@ -117,7 +88,3 @@ export const travelTools: Record<string, ToolDefinition> = {
     },
   },
 };
-
-export function getToolSchemas(): OpenAI.Chat.ChatCompletionTool[] {
-  return Object.values(travelTools).map((t) => t.schema);
-}

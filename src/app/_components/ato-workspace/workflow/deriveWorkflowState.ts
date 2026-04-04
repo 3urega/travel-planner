@@ -54,6 +54,10 @@ function deriveCurrentStage(response: ATOResponse | null): WorkspaceStage {
     return "define_trip";
   }
 
+  if (response.phase === "blocked") {
+    return "define_trip";
+  }
+
   const sel = response.pendingSelections?.[0];
   if (response.phase === "awaiting_selection") {
     if (sel?.selectionKind === "flight") return "select_flight";
@@ -89,6 +93,11 @@ function buildNextBestAction(
 ): NextBestAction {
   switch (current) {
     case "define_trip":
+      if (_response?.phase === "blocked" && _response.flightSearchBlock) {
+        return {
+          headline: _response.flightSearchBlock.reason,
+        };
+      }
       return {
         headline:
           "Describe tu viaje con calma y pulsa planificar cuando estés listo.",
@@ -138,6 +147,9 @@ function buildAvailableActions(
   const actions: string[] = [];
   if (current === "define_trip") {
     actions.push("submit_goal", "fill_slots", "adjust_preferences");
+    if (response?.phase === "blocked") {
+      actions.push("retry_after_flight_block");
+    }
   }
   if (current === "select_flight" || current === "select_hotel") {
     actions.push("select_catalog_option");
@@ -176,6 +188,8 @@ export function deriveWorkflowState(
       ? (sel?.selectionKind ?? null)
       : null;
 
+  const isFlightSearchBlocked = response?.phase === "blocked";
+
   const requiresApproval = (response?.pendingApprovals.length ?? 0) > 0;
   const simulationMeaningful = response
     ? isSimulationMeaningful(response)
@@ -188,7 +202,9 @@ export function deriveWorkflowState(
 
   let canAdvance = false;
   if (currentStage === "define_trip") {
-    if (response?.phase === "awaiting_input" && response.missingSlots?.length) {
+    if (isFlightSearchBlocked) {
+      canAdvance = options?.hasGoalText === true;
+    } else if (response?.phase === "awaiting_input" && response.missingSlots?.length) {
       canAdvance = options?.slotsComplete === true;
     } else {
       canAdvance = options?.hasGoalText === true;
@@ -211,6 +227,7 @@ export function deriveWorkflowState(
     selectedFlightId,
     selectedHotelId,
     pendingSelectionKind,
+    isFlightSearchBlocked,
     requiresApproval,
     executionReady,
     simulationMeaningful,

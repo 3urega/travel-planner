@@ -51,6 +51,81 @@ describe("planFromValidatedDraftBody", () => {
     expect(r).toBeNull();
   });
 
+  it("devuelve null si hay search_hotels sin depender de search_flights", () => {
+    const r = planFromValidatedDraftBody(sessionId, {
+      goal: "X",
+      steps: [
+        {
+          id: "h",
+          type: "search_hotels",
+          description: "hotel",
+          dependsOn: [],
+          args: {},
+          approvalRequired: false,
+        },
+      ],
+    });
+    expect(r).toBeNull();
+  });
+
+  it("devuelve null si el hotel no enlaza transitivamente con vuelos", () => {
+    const r = planFromValidatedDraftBody(sessionId, {
+      goal: "X",
+      steps: [
+        {
+          id: "sf",
+          type: "search_flights",
+          description: "v",
+          dependsOn: [],
+          args: {},
+          approvalRequired: false,
+        },
+        {
+          id: "ev",
+          type: "evaluate_options",
+          description: "e",
+          dependsOn: [],
+          args: {},
+          approvalRequired: false,
+        },
+        {
+          id: "h",
+          type: "search_hotels",
+          description: "h",
+          dependsOn: ["ev"],
+          args: {},
+          approvalRequired: false,
+        },
+      ],
+    });
+    expect(r).toBeNull();
+  });
+
+  it("acepta hotel que depende transitivamente del paso de vuelo", () => {
+    const r = planFromValidatedDraftBody(sessionId, {
+      goal: "X",
+      steps: [
+        {
+          id: "sf",
+          type: "search_flights",
+          description: "v",
+          dependsOn: [],
+          args: {},
+          approvalRequired: false,
+        },
+        {
+          id: "h",
+          type: "search_hotels",
+          description: "h",
+          dependsOn: ["sf"],
+          args: {},
+          approvalRequired: false,
+        },
+      ],
+    });
+    expect(r?.kind).toBe("plan");
+  });
+
   it("devuelve null si hay ids duplicados", () => {
     const r = planFromValidatedDraftBody(sessionId, {
       goal: "X",

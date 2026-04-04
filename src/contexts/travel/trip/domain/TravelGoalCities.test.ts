@@ -17,6 +17,22 @@ describe("TravelGoalCities", () => {
     expect(r.to).toBe("Roma");
   });
 
+  it("infiere 'de X a Y' (español habitual: ir de Barcelona a Copenhague)", () => {
+    const r = TravelGoalCities.inferFromGoal(
+      "Quiero ir de barcelona a copenhague las navidades del 2026",
+    );
+    expect(r.from).toBe("barcelona");
+    expect(r.to).toBe("copenhague");
+  });
+
+  it("infiere 'from X to Y' en inglés", () => {
+    const r = TravelGoalCities.inferFromGoal(
+      "I want to fly from Lisbon to Dublin next summer",
+    );
+    expect(r.from).toBe("Lisbon");
+    expect(r.to).toBe("Dublin");
+  });
+
   it("usa valores por defecto si no hay coincidencias", () => {
     const r = TravelGoalCities.inferFromGoal("quiero viajar");
     expect(r.from).toBe("Origin");

@@ -257,6 +257,42 @@ export class ATOOrchestrator {
       };
     }
 
+    if (execResult.executionPhase === "blocked" && execResult.flightBlock) {
+      const block = execResult.flightBlock;
+      const prefsOut = this.stripGraphCheckpointPrefs(mergedPrefs);
+      await this.sessionRepository.save({
+        ...session,
+        status: "active",
+        planId: plan.id,
+        preferences: prefsOut,
+        updatedAt: new Date(),
+      });
+
+      const auditEvents = await this.auditLogger.getSessionHistory(sid);
+      const assistantMessage =
+        block.code === "flight_tool_failed"
+          ? `No se pudo buscar vuelos: ${block.reason}. Comprueba datos y proveedor, y vuelve a planificar.`
+          : `${block.reason} Ajusta el viaje o las fechas y envía de nuevo.`;
+
+      return {
+        sessionId: sid,
+        phase: "blocked",
+        flightSearchBlock: block,
+        assistantMessage,
+        plan,
+        simulation,
+        decisions: execResult.decisions,
+        pendingApprovals: execResult.pendingApprovals,
+        executedSteps: execResult.executedSteps,
+        auditEvents,
+        summary: assistantMessage,
+        ...(adgPersisted && {
+          adgGraphId: adgPersisted.graphId,
+          adgGraphVersionId: adgPersisted.graphVersionId,
+        }),
+      };
+    }
+
     const finalStatus =
       execResult.pendingApprovals.length > 0 ? "awaiting_approval" : "completed";
     await this.sessionRepository.save({
@@ -384,6 +420,42 @@ export class ATOOrchestrator {
         auditEvents,
         summary:
           "Selecciona otra opción o reanuda tras confirmar en /api/graph/select.",
+        ...(adgGraphId && graphVersionId
+          ? { adgGraphId: String(adgGraphId), adgGraphVersionId: graphVersionId }
+          : {}),
+      };
+    }
+
+    if (execResult.executionPhase === "blocked" && execResult.flightBlock) {
+      const block = execResult.flightBlock;
+      const cleanedPrefs = this.stripGraphCheckpointPrefs(mergedPrefs);
+      await this.sessionRepository.save({
+        ...existing,
+        goal,
+        preferences: cleanedPrefs,
+        status: "active",
+        planId: plan.id,
+        updatedAt: new Date(),
+      });
+
+      const auditEvents = await this.auditLogger.getSessionHistory(sid);
+      const assistantMessage =
+        block.code === "flight_tool_failed"
+          ? `No se pudo buscar vuelos: ${block.reason}. Comprueba datos y proveedor, y vuelve a planificar.`
+          : `${block.reason} Ajusta el viaje o las fechas y envía de nuevo.`;
+
+      return {
+        sessionId: sid,
+        phase: "blocked",
+        flightSearchBlock: block,
+        assistantMessage,
+        plan,
+        simulation,
+        decisions: execResult.decisions,
+        pendingApprovals: execResult.pendingApprovals,
+        executedSteps: execResult.executedSteps,
+        auditEvents,
+        summary: assistantMessage,
         ...(adgGraphId && graphVersionId
           ? { adgGraphId: String(adgGraphId), adgGraphVersionId: graphVersionId }
           : {}),

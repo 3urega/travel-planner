@@ -93,6 +93,8 @@ export function buildTripStatusBadge(
         return { label: "Listo para aprobación", variant: "warning" };
       }
       return { label: "Completado", variant: "success" };
+    case "blocked":
+      return { label: "Vuelos bloqueados", variant: "warning" };
     default:
       return { label: "Activo", variant: "default" };
   }
@@ -124,6 +126,20 @@ export function deriveProgressStages(
     (s) => s.type === "search_hotels",
   );
   const phase = response.phase;
+
+  if (phase === "blocked") {
+    return [
+      { id: "plan", label: "Plan y datos", state: "completed" as const },
+      {
+        id: "flights",
+        label: "Vuelos",
+        state: hasSearchFlights ? ("waiting" as const) : ("locked" as const),
+      },
+      { id: "hotels", label: "Hotel", state: "locked" as const },
+      { id: "sim", label: "Simulación", state: "active" as const },
+      { id: "appr", label: "Aprobación / ejecución", state: "locked" as const },
+    ];
+  }
 
   const sel = response.pendingSelections?.[0];
   const flightWaiting =

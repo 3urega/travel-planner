@@ -4,6 +4,36 @@ import type { Plan, PlanStep } from "./Plan";
 import type { PlannerGenerateResult } from "./PlannerResult";
 import type { TravelPlanDraftStep } from "./TravelPlanDraftOutcome";
 
+/** Cada `search_hotels` debe depender (transitivamente) de algún `search_flights`. */
+function flightHotelDependencyValid(steps: TravelPlanDraftStep[]): boolean {
+  const flightIds = new Set(
+    steps.filter((s) => s.type === "search_flights").map((s) => s.id),
+  );
+  const hasHotel = steps.some((s) => s.type === "search_hotels");
+  if (hasHotel && flightIds.size === 0) return false;
+
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  for (const s of steps) {
+    if (s.type !== "search_hotels") continue;
+    const stack = [...s.dependsOn];
+    const seen = new Set<string>();
+    let reachesFlight = false;
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (flightIds.has(id)) {
+        reachesFlight = true;
+        break;
+      }
+      const dep = byId.get(id);
+      if (dep) stack.push(...dep.dependsOn);
+    }
+    if (!reachesFlight) return false;
+  }
+  return true;
+}
+
 function stepIdsAreUnique(steps: { id: string }[]): boolean {
   const ids = steps.map((s) => s.id.trim()).filter((id) => id.length > 0);
   return new Set(ids).size === ids.length;
@@ -35,6 +65,7 @@ export function planFromValidatedDraftBody(
   if (rawSteps.length === 0) return null;
   if (!stepIdsAreUnique(rawSteps)) return null;
   if (!dependsOnReferencesAreValid(rawSteps)) return null;
+  if (!flightHotelDependencyValid(rawSteps)) return null;
 
   const now = new Date();
   const steps: PlanStep[] = rawSteps.map((s) => {

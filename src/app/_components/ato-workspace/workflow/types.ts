@@ -30,6 +30,8 @@ export type WorkspaceWorkflowState = {
   selectedFlightId: string | null;
   selectedHotelId: string | null;
   pendingSelectionKind: "flight" | "hotel" | null;
+  /** `phase === "blocked"` en la API (vuelo fallido o sin ofertas). */
+  isFlightSearchBlocked: boolean;
   requiresApproval: boolean;
   executionReady: boolean;
   /** Si la simulación aporta valor para la etapa de revisión */

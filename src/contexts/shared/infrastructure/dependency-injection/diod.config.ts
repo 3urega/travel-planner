@@ -1,6 +1,6 @@
 import "reflect-metadata";
 
-import { ContainerBuilder } from "diod";
+import { ContainerBuilder, type Container } from "diod";
 
 // Shared
 import { PostgresPool } from "@/contexts/shared/infrastructure/postgres/PostgresPool";
@@ -15,7 +15,11 @@ import { PostgresAuditRepository } from "@/contexts/travel/trip/infrastructure/p
 import { PostgresAdgGraphRepository } from "@/contexts/travel/trip/infrastructure/postgres/PostgresAdgGraphRepository";
 
 // Travel: Domain ports + Application
+import { FlightSearchPort } from "@/contexts/travel/trip/domain/FlightSearchPort";
 import { TravelPlanDraftPort } from "@/contexts/travel/trip/domain/TravelPlanDraftPort";
+import { MockFlightSearchAdapter } from "@/contexts/travel/trip/infrastructure/flights/MockFlightSearchAdapter";
+import { FliFlightSearchAdapter } from "@/contexts/travel/trip/infrastructure/flights/fli/FliFlightSearchAdapter";
+import { TravelToolCatalog } from "@/contexts/travel/trip/infrastructure/tools/TravelToolCatalog";
 import { OpenAiTravelPlanDraftAdapter } from "@/contexts/travel/trip/infrastructure/ai/OpenAiTravelPlanDraftAdapter";
 import { GenerateTravelPlan } from "@/contexts/travel/trip/application/generate-travel-plan/GenerateTravelPlan";
 import { SimulationService } from "@/contexts/travel/trip/application/simulate/SimulationService";
@@ -47,6 +51,20 @@ builder
 builder.registerAndUse(PostgresSessionRepository);
 builder.registerAndUse(PostgresAuditRepository);
 builder.registerAndUse(PostgresAdgGraphRepository);
+
+// Flight search (puerto + adaptadores; el catálogo de tools inyecta el puerto)
+builder.registerAndUse(MockFlightSearchAdapter);
+builder.registerAndUse(FliFlightSearchAdapter);
+builder.register(FlightSearchPort).useFactory((c: Container) => {
+  const provider = (process.env.FLIGHT_SEARCH_PROVIDER ?? "mock")
+    .toLowerCase()
+    .trim();
+  if (provider === "fli") {
+    return c.get(FliFlightSearchAdapter);
+  }
+  return c.get(MockFlightSearchAdapter);
+});
+builder.registerAndUse(TravelToolCatalog);
 
 // Application services (travel)
 builder.registerAndUse(GenerateTravelPlan);

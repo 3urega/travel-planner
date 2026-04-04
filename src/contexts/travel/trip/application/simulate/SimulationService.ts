@@ -16,7 +16,6 @@ const STEP_COST_ESTIMATES: Partial<Record<string, number>> = {
   book_hotel: 450,
 };
 
-const BOOKING_TYPES = new Set(["book_flight", "book_hotel"]);
 const BOOKING_REQUIRES_SEARCH: Record<string, string> = {
   book_flight: "search_flights",
   book_hotel: "search_hotels",

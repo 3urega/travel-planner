@@ -17,10 +17,20 @@ export const GRAPH_CHECKPOINT_PREF_KEY = "graphExecutionCheckpoint";
 export const CHECKPOINT_PLAN_PREF_KEY = "checkpointPlan";
 export const ADG_GRAPH_ID_PREF_KEY = "checkpointAdgGraphId";
 
+/** Metadatos opcionales para tarjetas de selección (p. ej. vuelo); sin acoplar a un proveedor. */
+export type SelectionOptionFlightDetail = {
+  airline?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  stops?: number;
+  durationMinutes?: number;
+};
+
 export type SelectionOptionPayload = {
   id: string;
   label: string;
   priceUsd?: number;
+  detail?: SelectionOptionFlightDetail;
 };
 
 export type AwaitingSelectionPayload = {
