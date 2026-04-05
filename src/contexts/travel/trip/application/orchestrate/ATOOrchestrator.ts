@@ -6,11 +6,15 @@ import { GenerateTravelPlan } from "../generate-travel-plan/GenerateTravelPlan";
 import { SimulationService } from "../simulate/SimulationService";
 import { AuditLogger } from "../audit/AuditLogger";
 import { DecisionGraphWriter } from "../graph/DecisionGraphWriter";
-import { GraphExecutor } from "../graph/GraphExecutor";
+import { GraphExecutor, type PlanStepExecutionResult } from "../graph/GraphExecutor";
 import { PostgresSessionRepository } from "../../infrastructure/postgres/PostgresSessionRepository";
 import type { Plan } from "../../domain/Plan";
 import type { Session } from "../../domain/Session";
-import type { ATOResponse, PendingApprovalItem } from "../../domain/ATOResponse";
+import type {
+  ATOResponse,
+  FlightSearchBlockInfo,
+  PendingApprovalItem,
+} from "../../domain/ATOResponse";
 import {
   createAwaitingInputSimulationStub,
   createAwaitingSelectionSimulationStub,
@@ -32,6 +36,7 @@ import {
   planToPreferenceJson,
   readCheckpointFromPreferences,
 } from "../../domain/GraphExecutionCheckpoint";
+import { FlightRecoveryPort } from "../../domain/FlightRecoveryPort";
 
 /**
  * Orquestador central del ATO (agente de viajes).
@@ -57,6 +62,7 @@ export class ATOOrchestrator {
     private readonly sessionRepository: PostgresSessionRepository,
     private readonly decisionGraphWriter: DecisionGraphWriter,
     private readonly graphExecutor: GraphExecutor,
+    private readonly flightRecovery: FlightRecoveryPort,
   ) {}
 
   /**
@@ -258,39 +264,17 @@ export class ATOOrchestrator {
     }
 
     if (execResult.executionPhase === "blocked" && execResult.flightBlock) {
-      const block = execResult.flightBlock;
       const prefsOut = this.stripGraphCheckpointPrefs(mergedPrefs);
-      await this.sessionRepository.save({
-        ...session,
-        status: "active",
-        planId: plan.id,
-        preferences: prefsOut,
-        updatedAt: new Date(),
-      });
-
-      const auditEvents = await this.auditLogger.getSessionHistory(sid);
-      const assistantMessage =
-        block.code === "flight_tool_failed"
-          ? `No se pudo buscar vuelos: ${block.reason}. Comprueba datos y proveedor, y vuelve a planificar.`
-          : `${block.reason} Ajusta el viaje o las fechas y envía de nuevo.`;
-
-      return {
-        sessionId: sid,
-        phase: "blocked",
-        flightSearchBlock: block,
-        assistantMessage,
+      return this.respondAwaitingInputAfterFlightBlock({
+        sid,
+        narrativeForPlanner,
         plan,
-        simulation,
-        decisions: execResult.decisions,
-        pendingApprovals: execResult.pendingApprovals,
-        executedSteps: execResult.executedSteps,
-        auditEvents,
-        summary: assistantMessage,
-        ...(adgPersisted && {
-          adgGraphId: adgPersisted.graphId,
-          adgGraphVersionId: adgPersisted.graphVersionId,
-        }),
-      };
+        execResult,
+        block: execResult.flightBlock,
+        prefsOut,
+        session,
+        adgPersisted: adgPersisted ?? undefined,
+      });
     }
 
     const finalStatus =
@@ -362,6 +346,88 @@ export class ATOOrchestrator {
     return next;
   }
 
+  /** Tras bloqueo de vuelo: segunda pasada (LLM + fallback) y vuelta a recogida de datos. */
+  private async respondAwaitingInputAfterFlightBlock(params: {
+    sid: string;
+    narrativeForPlanner: string;
+    plan: Plan;
+    execResult: PlanStepExecutionResult;
+    block: FlightSearchBlockInfo;
+    prefsOut: Record<string, unknown>;
+    session: Session;
+    adgPersisted?: { graphId: string; graphVersionId: string };
+  }): Promise<ATOResponse> {
+    const {
+      sid,
+      narrativeForPlanner,
+      plan,
+      execResult,
+      block,
+      prefsOut,
+      session,
+      adgPersisted,
+    } = params;
+
+    const flightStep = plan.steps.find(
+      (s) => s.id === block.stepId && s.type === "search_flights",
+    );
+    const searchFlightArgs =
+      (flightStep?.args as Record<string, unknown> | undefined) ?? {};
+
+    const recovery = await this.flightRecovery.requestNeedInputAfterFlightFailure(
+      {
+        userMessage: narrativeForPlanner,
+        planGoal: plan.goal,
+        flightBlock: block,
+        searchFlightArgs,
+      },
+    );
+
+    await this.auditLogger.log({
+      sessionId: sid,
+      planId: plan.id,
+      stepId: block.stepId,
+      type: "flight_recovery_input_required",
+      actor: "system",
+      reason: block.code,
+      payloadSnapshot: {
+        slotIds: recovery.missingSlots.map((s) => s.id),
+        flightBlockCode: block.code,
+      },
+    });
+
+    await this.sessionRepository.save({
+      ...session,
+      status: "active",
+      planId: plan.id,
+      preferences: prefsOut,
+      updatedAt: new Date(),
+    });
+
+    const auditEvents = await this.auditLogger.getSessionHistory(sid);
+    const placeholderPlan = createPlaceholderAwaitingPlan(sid);
+    const stubSim = createAwaitingInputSimulationStub();
+
+    return {
+      sessionId: sid,
+      phase: "awaiting_input",
+      assistantMessage: recovery.assistantMessage,
+      missingSlots: recovery.missingSlots,
+      flightSearchBlock: block,
+      plan: placeholderPlan,
+      simulation: stubSim,
+      decisions: execResult.decisions,
+      pendingApprovals: execResult.pendingApprovals,
+      executedSteps: execResult.executedSteps,
+      auditEvents,
+      summary: recovery.assistantMessage,
+      ...(adgPersisted && {
+        adgGraphId: adgPersisted.graphId,
+        adgGraphVersionId: adgPersisted.graphVersionId,
+      }),
+    };
+  }
+
   private async runResumeFromSelection(
     sid: string,
     existing: Session,
@@ -427,39 +493,20 @@ export class ATOOrchestrator {
     }
 
     if (execResult.executionPhase === "blocked" && execResult.flightBlock) {
-      const block = execResult.flightBlock;
       const cleanedPrefs = this.stripGraphCheckpointPrefs(mergedPrefs);
-      await this.sessionRepository.save({
-        ...existing,
-        goal,
-        preferences: cleanedPrefs,
-        status: "active",
-        planId: plan.id,
-        updatedAt: new Date(),
-      });
-
-      const auditEvents = await this.auditLogger.getSessionHistory(sid);
-      const assistantMessage =
-        block.code === "flight_tool_failed"
-          ? `No se pudo buscar vuelos: ${block.reason}. Comprueba datos y proveedor, y vuelve a planificar.`
-          : `${block.reason} Ajusta el viaje o las fechas y envía de nuevo.`;
-
-      return {
-        sessionId: sid,
-        phase: "blocked",
-        flightSearchBlock: block,
-        assistantMessage,
+      return this.respondAwaitingInputAfterFlightBlock({
+        sid,
+        narrativeForPlanner: goal,
         plan,
-        simulation,
-        decisions: execResult.decisions,
-        pendingApprovals: execResult.pendingApprovals,
-        executedSteps: execResult.executedSteps,
-        auditEvents,
-        summary: assistantMessage,
-        ...(adgGraphId && graphVersionId
-          ? { adgGraphId: String(adgGraphId), adgGraphVersionId: graphVersionId }
-          : {}),
-      };
+        execResult,
+        block: execResult.flightBlock,
+        prefsOut: cleanedPrefs,
+        session: { ...existing, goal },
+        adgPersisted:
+          adgGraphId && graphVersionId
+            ? { graphId: String(adgGraphId), graphVersionId }
+            : undefined,
+      });
     }
 
     const finalStatus =

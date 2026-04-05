@@ -821,14 +821,19 @@ export function ATOView(): React.ReactElement {
                   {response.missingSlots.map((slot) => (
                     <label key={slot.id} className="block text-xs text-zinc-700">
                       <span className="font-medium text-zinc-800">{slot.label}</span>
-                      {slot.role === "destination" ? (
+                      {slot.role === "destination" ||
+                      slot.role === "origin" ? (
                         <input
                           type="text"
                           value={slotDraft[slot.id] ?? ""}
                           onChange={(e) =>
                             setSlotDraft((d) => ({ ...d, [slot.id]: e.target.value }))
                           }
-                          placeholder="Ciudad o destino"
+                          placeholder={
+                            slot.role === "origin"
+                              ? "Ciudad o IATA origen"
+                              : "Ciudad o IATA destino"
+                          }
                           className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm"
                         />
                       ) : (

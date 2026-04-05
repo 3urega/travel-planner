@@ -32,7 +32,7 @@ export type PendingApprovalItem = {
 export type ATOResponse = {
   sessionId: string;
   phase: "awaiting_input" | "awaiting_selection" | "ready" | "blocked";
-  /** Presente si `phase === "blocked"` tras fallo u ofertas vacías en vuelos. */
+  /** Tras fallo de vuelos: presente con `phase === "blocked"` o en recuperación (`awaiting_input` tras LLM/fallback). */
   flightSearchBlock?: FlightSearchBlockInfo;
   /** Si el planner necesita datos del usuario (mensaje natural para la UI). */
   assistantMessage?: string;

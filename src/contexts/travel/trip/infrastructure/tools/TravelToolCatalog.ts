@@ -26,7 +26,7 @@ function assertResolvedFlightRoute(from: string, to: string): void {
   const t = to.trim();
   if (_PLACEHOLDER_IATA.test(f) || _PLACEHOLDER_IATA.test(t)) {
     throw new Error(
-      "Ruta no resuelta: origen o destino son placeholders (Origin/Destination).",
+      `Ruta no resuelta: origen o destino son placeholders (Origin/Destination). Recibido from=${JSON.stringify(f)} to=${JSON.stringify(t)}`,
     );
   }
 }
@@ -101,7 +101,6 @@ export class TravelToolCatalog {
       schema: searchFlightsOpenAiSchema,
       execute: async (rawArgs: Record<string, unknown>): Promise<unknown> => {
         const args = searchFlightsArgsSchema.parse(rawArgs);
-        assertResolvedFlightRoute(args.from, args.to);
         if (isAtoFlightDebug()) {
           console.warn("[ATO][search_flights] query", {
             from: args.from,
@@ -113,6 +112,7 @@ export class TravelToolCatalog {
             cabin: args.cabin,
           });
         }
+        assertResolvedFlightRoute(args.from, args.to);
         const offers = await this.flightSearchPort.search({
           from: args.from,
           to: args.to,

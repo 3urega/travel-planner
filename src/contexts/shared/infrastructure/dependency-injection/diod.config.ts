@@ -21,6 +21,8 @@ import { MockFlightSearchAdapter } from "@/contexts/travel/trip/infrastructure/f
 import { FliFlightSearchAdapter } from "@/contexts/travel/trip/infrastructure/flights/fli/FliFlightSearchAdapter";
 import { TravelToolCatalog } from "@/contexts/travel/trip/infrastructure/tools/TravelToolCatalog";
 import { OpenAiTravelPlanDraftAdapter } from "@/contexts/travel/trip/infrastructure/ai/OpenAiTravelPlanDraftAdapter";
+import { FlightRecoveryPort } from "@/contexts/travel/trip/domain/FlightRecoveryPort";
+import { OpenAiFlightRecoveryAdapter } from "@/contexts/travel/trip/infrastructure/ai/OpenAiFlightRecoveryAdapter";
 import { GenerateTravelPlan } from "@/contexts/travel/trip/application/generate-travel-plan/GenerateTravelPlan";
 import { SimulationService } from "@/contexts/travel/trip/application/simulate/SimulationService";
 import { ApprovalPolicyService } from "@/contexts/travel/trip/application/approve/ApprovalPolicyService";
@@ -46,6 +48,7 @@ builder.registerAndUse(OpenAIClient);
 builder
   .register(TravelPlanDraftPort)
   .useClass(OpenAiTravelPlanDraftAdapter);
+builder.register(FlightRecoveryPort).useClass(OpenAiFlightRecoveryAdapter);
 
 // Postgres repos (travel)
 builder.registerAndUse(PostgresSessionRepository);

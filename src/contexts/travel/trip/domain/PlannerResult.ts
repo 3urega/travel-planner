@@ -1,7 +1,11 @@
 import type { Plan } from "./Plan";
 
 /** Rol de un dato que el planner puede pedir (lista cerrada). */
-export type PlannerSlotRole = "outbound_date" | "return_date" | "destination";
+export type PlannerSlotRole =
+  | "outbound_date"
+  | "return_date"
+  | "destination"
+  | "origin";
 
 export type PlannerMissingSlot = {
   id: string;

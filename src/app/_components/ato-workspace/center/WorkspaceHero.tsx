@@ -16,7 +16,11 @@ function heroCopy(
   badge: string;
 } {
   if (stage === "define_trip") {
-    if (response?.phase === "blocked") {
+    const flightRecover =
+      response?.flightSearchBlock &&
+      (response.phase === "blocked" ||
+        (response.phase === "awaiting_input" && response.missingSlots?.length));
+    if (flightRecover) {
       return {
         title: "Hay que ajustar el tramo aéreo",
         subtitle:

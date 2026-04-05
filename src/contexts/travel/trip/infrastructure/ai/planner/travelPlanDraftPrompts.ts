@@ -13,7 +13,7 @@ Shape:
 }
 
 Rules:
-- search_flights.args: from, to, date (YYYY-MM-DD from the outbound date in confirmed data). Use REAL city names or IATA codes from the user's trip text at the start of the message — NEVER the placeholder strings "Origin" or "Destination".
+- search_flights.args: from, to, date (YYYY-MM-DD from the outbound date in confirmed data). Prefer 3-letter IATA when known (e.g. Barcelona→BCN, Hamburg/Hamburgo→HAM, Paris→CDG) — otherwise REAL city names from the user's trip text at the start of the message. NEVER the placeholder strings "Origin" or "Destination".
 - search_hotels.args: city (real destination name or IATA from the same trip text), check_in / check_out from confirmed outbound/return dates — NEVER literal "Destination" unless it is the actual city name (it is not)
 - Use ONLY the dates from [CONFIRMED travel data]; do not ask for more input
 - dependsOn must reflect execution order`;
@@ -34,7 +34,7 @@ You MUST return exactly ONE of two shapes:
   ]
 }
 
-- role MUST be one of: outbound_date, return_date, destination
+- role MUST be one of: outbound_date, return_date, destination, origin
 - Use "destination" only if origin/destination cities are unclear for booking.
 - If the user gave vague timing ("next Christmas", "in April") without calendar dates, you MUST use need_input and ask for concrete YYYY-MM-DD dates — do NOT invent dates.
 
@@ -47,7 +47,7 @@ You MUST return exactly ONE of two shapes:
 
 Plan step rules:
 - Valid step types: search_flights, search_hotels, evaluate_options, propose_plan, book_flight, book_hotel
-- search_flights.args.from / .to must be real cities or IATA from the user message — never "Origin" or "Destination" as placeholders
+- search_flights.args.from / .to: prefer 3-letter IATA when known (BCN, HAM, CDG, …); otherwise real city names from the user message — never "Origin" or "Destination" as placeholders
 - Ordering: searches before evaluate_options, evaluate_options before propose_plan, book_* last
 - book_* steps MUST have approvalRequired: true
 - Use ONLY YYYY-MM-DD for dates in args — never guess or fabricate dates

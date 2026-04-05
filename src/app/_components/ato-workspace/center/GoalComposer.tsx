@@ -151,7 +151,7 @@ export function GoalComposer({
                   >
                     {slot.label}
                   </Label>
-                  {slot.role === "destination" ? (
+                  {slot.role === "destination" || slot.role === "origin" ? (
                     <Input
                       id={`slot-${slot.id}`}
                       className="mt-2 rounded-lg"
@@ -159,7 +159,11 @@ export function GoalComposer({
                       onChange={(e) =>
                         onSlotChange(slot.id, e.target.value)
                       }
-                      placeholder="Ciudad destino"
+                      placeholder={
+                        slot.role === "origin"
+                          ? "Ciudad o IATA origen"
+                          : "Ciudad destino"
+                      }
                     />
                   ) : (
                     <Input

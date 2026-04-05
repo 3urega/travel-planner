@@ -16,9 +16,11 @@ const slotRoleSchema = z.enum([
   "outbound_date",
   "return_date",
   "destination",
+  "origin",
 ]);
 
-const needInputSchema = z.object({
+/** JSON `need_input` para planner estándar y recuperación tras fallo de vuelo. */
+export const flightRecoveryNeedInputSchema = z.object({
   kind: z.literal("need_input"),
   assistantMessage: z.string().min(1),
   missingSlots: z
@@ -32,6 +34,8 @@ const needInputSchema = z.object({
     .min(1)
     .max(5),
 });
+
+const needInputSchema = flightRecoveryNeedInputSchema;
 
 const planKindSchema = z.object({
   kind: z.literal("plan"),

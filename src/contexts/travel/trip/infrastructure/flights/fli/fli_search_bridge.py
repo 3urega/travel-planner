@@ -38,6 +38,27 @@ _AIRPORT_ALIASES: dict[str, str] = {
     "BILBAO": "BIO",
     "MALAGA": "AGP",
     "MÁLAGA": "AGP",
+    # Alemania / Benelux / Europa central (nombres que el LLM suele enviar en minúsculas o español)
+    "HAMBURGO": "HAM",
+    "HAMBURG": "HAM",
+    "FRANKFURT": "FRA",
+    "MUNICH": "MUC",
+    "MUNCHEN": "MUC",
+    "AMSTERDAM": "AMS",
+    "VIENA": "VIE",
+    "WIEN": "VIE",
+    "VIENNA": "VIE",
+    "STUTTGART": "STR",
+    "ZURICH": "ZRH",
+    "BRUSELAS": "BRU",
+    "BRUSSELS": "BRU",
+    "BRUSELLES": "BRU",
+    "VARSOVIA": "WAW",
+    "WARSAW": "WAW",
+    "PRAGA": "PRG",
+    "PRAGUE": "PRG",
+    "VENICE": "VCE",
+    "VENECIA": "VCE",
 }
 
 # Quitar tildes comunes para resolver alias aunque el enum solo reciba ASCII.

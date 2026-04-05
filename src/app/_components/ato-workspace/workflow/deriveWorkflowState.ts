@@ -93,7 +93,7 @@ function buildNextBestAction(
 ): NextBestAction {
   switch (current) {
     case "define_trip":
-      if (_response?.phase === "blocked" && _response.flightSearchBlock) {
+      if (_response?.flightSearchBlock) {
         return {
           headline: _response.flightSearchBlock.reason,
         };
@@ -147,7 +147,7 @@ function buildAvailableActions(
   const actions: string[] = [];
   if (current === "define_trip") {
     actions.push("submit_goal", "fill_slots", "adjust_preferences");
-    if (response?.phase === "blocked") {
+    if (response?.flightSearchBlock) {
       actions.push("retry_after_flight_block");
     }
   }

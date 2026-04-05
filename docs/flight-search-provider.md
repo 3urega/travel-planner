@@ -7,7 +7,7 @@ El ATO ejecuta la capacidad **`search_flights`** igual que antes; lo que cambia 
 
 Configuración: ver `.env.example` (`FLIGHT_SEARCH_PROVIDER`, `FLIGHT_SEARCH_PYTHON`, `FLI_BRIDGE_*`).
 
-**Diagnóstico de `search_flights`:** con `ATO_FLIGHT_DEBUG=1` en el entorno del proceso Node, verás en consola líneas con prefijo `[ATO][search_flights]`: una con los argumentos ya validados por Zod justo antes de llamar al puerto (`query`) y otra en el ejecutor del grafo con `stepId` y `args` (`step`). Sirve para comprobar que `from` / `to` no sigan siendo placeholders antes de llegar al bridge.
+**Diagnóstico de `search_flights`:** añade `ATO_FLIGHT_DEBUG=1` a `.env.local` y **reinicia** `npm run dev` (solo carga en el proceso Node). Los mensajes van a la **terminal del servidor** (no a la consola del navegador): busca el prefijo `[ATO][search_flights]`. Hay dos líneas: `query` (args tras Zod, **antes** de rechazar placeholders o llamar al puerto) y `step` (en el ejecutor del grafo: `stepId` + `args`). Para filtrar: `npm run dev 2>&1 | grep '\[ATO\]\[search_flights\]'`.
 
 ## Probar con mock (rápido)
 
@@ -56,6 +56,12 @@ Desde la raíz del repo:
 
 ```bash
 echo '{"from":"BCN","to":"CDG","date":"2026-12-23"}' | .venv-fli/bin/python src/contexts/travel/trip/infrastructure/flights/fli/fli_search_bridge.py
+```
+
+El bridge normaliza y **mapea nombres de ciudad** a IATA cuando el modelo envía texto en lugar de códigos (p. ej. `hamburgo` / `Hamburg` → `HAM`). Ejemplo:
+
+```bash
+echo '{"from":"BCN","to":"hamburgo","date":"2026-12-20"}' | .venv-fli/bin/python src/contexts/travel/trip/infrastructure/flights/fli/fli_search_bridge.py
 ```
 
 Salida esperada: JSON con `"ok": true` y `"offers": [...]`, o `"ok": false` con `code` / `message` si falla red, validación o entorno.
