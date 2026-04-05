@@ -34,4 +34,16 @@ describe("TravelToolCatalog", () => {
     expect(names.has("search_hotels")).toBe(true);
     expect(names.has("book_flight")).toBe(true);
   });
+
+  it("search_flights rechaza origen o destino placeholder (Origin/Destination)", async () => {
+    const catalog = new TravelToolCatalog(new MockFlightSearchAdapter());
+    const def = catalog.getTools().search_flights;
+    await expect(
+      def.execute({
+        from: "Origin",
+        to: "CDG",
+        date: "2026-12-23",
+      }),
+    ).rejects.toThrow(/placeholders/);
+  });
 });

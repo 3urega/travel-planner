@@ -131,6 +131,17 @@ export class GraphExecutor {
           payloadSnapshot: { tool: step.type, args: step.args },
         });
 
+        if (
+          process.env.ATO_FLIGHT_DEBUG === "1" &&
+          step.type === "search_flights"
+        ) {
+          console.warn("[ATO][search_flights] step", {
+            stepId: step.id,
+            type: step.type,
+            args: step.args,
+          });
+        }
+
         const execResult = await executeWithResilience(toolDef, step.args);
 
         if (graphVersionId) {

@@ -38,4 +38,28 @@ describe("TravelGoalCities", () => {
     expect(r.from).toBe("Origin");
     expect(r.to).toBe("Destination");
   });
+
+  it("origen con 'salgo de' después del primer 'en <ciudad>' (Hamburgo / Barcelona)", () => {
+    const r = TravelGoalCities.inferFromGoal(
+      "Quiero pasarlas en Hamburgo, salgo de Barcelona el 20 de diciembre",
+    );
+    expect(r.from).toBe("Barcelona");
+    expect(r.to).toBe("Hamburgo");
+  });
+
+  it("origen con 'vuelo desde' aunque antes haya otro 'en ciudad'", () => {
+    const r = TravelGoalCities.inferFromGoal(
+      "Fin de semana en Valencia, vuelo desde Bilbao",
+    );
+    expect(r.from).toBe("Bilbao");
+    expect(r.to).toBe("Valencia");
+  });
+
+  it("destino con 'voy a' cuando no hay 'en ciudad'", () => {
+    const r = TravelGoalCities.inferFromGoal(
+      "Voy a París desde Madrid la próxima semana",
+    );
+    expect(r.from).toBe("Madrid");
+    expect(r.to).toBe("París");
+  });
 });

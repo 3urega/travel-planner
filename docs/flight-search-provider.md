@@ -7,6 +7,8 @@ El ATO ejecuta la capacidad **`search_flights`** igual que antes; lo que cambia 
 
 Configuración: ver `.env.example` (`FLIGHT_SEARCH_PROVIDER`, `FLIGHT_SEARCH_PYTHON`, `FLI_BRIDGE_*`).
 
+**Diagnóstico de `search_flights`:** con `ATO_FLIGHT_DEBUG=1` en el entorno del proceso Node, verás en consola líneas con prefijo `[ATO][search_flights]`: una con los argumentos ya validados por Zod justo antes de llamar al puerto (`query`) y otra en el ejecutor del grafo con `stepId` y `args` (`step`). Sirve para comprobar que `from` / `to` no sigan siendo placeholders antes de llegar al bridge.
+
 ## Probar con mock (rápido)
 
 1. Asegúrate de tener `.env.local` (p. ej. `cp .env.example .env.local`).

@@ -19,6 +19,22 @@ const searchFlightsArgsSchema = z.object({
   cabin: z.string().optional(),
 });
 
+const _PLACEHOLDER_IATA = /^(origin|destination)$/i;
+
+function assertResolvedFlightRoute(from: string, to: string): void {
+  const f = from.trim();
+  const t = to.trim();
+  if (_PLACEHOLDER_IATA.test(f) || _PLACEHOLDER_IATA.test(t)) {
+    throw new Error(
+      "Ruta no resuelta: origen o destino son placeholders (Origin/Destination).",
+    );
+  }
+}
+
+function isAtoFlightDebug(): boolean {
+  return process.env.ATO_FLIGHT_DEBUG === "1";
+}
+
 const searchFlightsOpenAiSchema: OpenAI.Chat.ChatCompletionTool = {
   type: "function",
   function: {
@@ -85,6 +101,18 @@ export class TravelToolCatalog {
       schema: searchFlightsOpenAiSchema,
       execute: async (rawArgs: Record<string, unknown>): Promise<unknown> => {
         const args = searchFlightsArgsSchema.parse(rawArgs);
+        assertResolvedFlightRoute(args.from, args.to);
+        if (isAtoFlightDebug()) {
+          console.warn("[ATO][search_flights] query", {
+            from: args.from,
+            to: args.to,
+            date: args.date,
+            budget: args.budget,
+            adults: args.adults,
+            non_stop: args.non_stop,
+            cabin: args.cabin,
+          });
+        }
         const offers = await this.flightSearchPort.search({
           from: args.from,
           to: args.to,

@@ -101,6 +101,50 @@ describe("planFromValidatedDraftBody", () => {
     expect(r).toBeNull();
   });
 
+  it("corrige Origin/Destination del LLM usando routeInferenceText", () => {
+    const r = planFromValidatedDraftBody(
+      sessionId,
+      {
+        goal: "Viaje navideño",
+        steps: [
+          {
+            id: "sf",
+            type: "search_flights",
+            description: "vuelos",
+            dependsOn: [],
+            args: {
+              from: "Origin",
+              to: "Destination",
+              date: "2026-12-20",
+            },
+            approvalRequired: false,
+          },
+          {
+            id: "sh",
+            type: "search_hotels",
+            description: "hotel",
+            dependsOn: ["sf"],
+            args: {
+              city: "Copenhague",
+              check_in: "2026-12-20",
+              check_out: "2026-12-27",
+            },
+            approvalRequired: false,
+          },
+        ],
+      },
+      {
+        routeInferenceText:
+          "Quiero ir de barcelona a copenhague las navidades del 2026",
+      },
+    );
+    expect(r?.kind).toBe("plan");
+    if (r?.kind !== "plan") return;
+    const sf = r.plan.steps.find((s) => s.type === "search_flights");
+    expect(sf?.args.from).toBe("barcelona");
+    expect(sf?.args.to).toBe("copenhague");
+  });
+
   it("acepta hotel que depende transitivamente del paso de vuelo", () => {
     const r = planFromValidatedDraftBody(sessionId, {
       goal: "X",

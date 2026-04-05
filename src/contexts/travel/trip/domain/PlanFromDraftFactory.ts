@@ -3,6 +3,34 @@ import crypto from "crypto";
 import type { Plan, PlanStep } from "./Plan";
 import type { PlannerGenerateResult } from "./PlannerResult";
 import type { TravelPlanDraftStep } from "./TravelPlanDraftOutcome";
+import { TravelGoalCities } from "./TravelGoalCities";
+
+/** Valores típicos del LLM cuando no copia ciudades reales en `search_flights.args`. */
+function isPlaceholderRouteToken(value: string): boolean {
+  const t = value.trim();
+  if (t.length === 0) return true;
+  return /^(origin|destination)$/i.test(t);
+}
+
+/** Sustituye `from`/`to` ficticios por la heurística aplicada al `goal` del plan. */
+function applyInferredCitiesToFlightSteps(
+  steps: PlanStep[],
+  goalText: string,
+): void {
+  const inferred = TravelGoalCities.inferFromGoal(goalText);
+  for (const s of steps) {
+    if (s.type !== "search_flights") continue;
+    const args = s.args as Record<string, unknown>;
+    const fromRaw = String(args.from ?? "").trim();
+    const toRaw = String(args.to ?? "").trim();
+    if (isPlaceholderRouteToken(fromRaw)) {
+      args.from = inferred.from;
+    }
+    if (isPlaceholderRouteToken(toRaw)) {
+      args.to = inferred.to;
+    }
+  }
+}
 
 /** Cada `search_hotels` debe depender (transitivamente) de algún `search_flights`. */
 function flightHotelDependencyValid(steps: TravelPlanDraftStep[]): boolean {
@@ -52,6 +80,11 @@ function dependsOnReferencesAreValid(
   return true;
 }
 
+export type PlanFromValidatedDraftOptions = {
+  /** Narrativa original; si el LLM deja `Origin`/`Destination`, se infiere ruta desde aquí + goal */
+  routeInferenceText?: string;
+};
+
 /**
  * Ensambla un agregado `Plan` desde un cuerpo de borrador validado por el adaptador LLM
  * y aplica invariantes (reservas con aprobación, coherencia de dependsOn).
@@ -59,6 +92,7 @@ function dependsOnReferencesAreValid(
 export function planFromValidatedDraftBody(
   sessionId: string,
   body: { goal: string; steps: TravelPlanDraftStep[] },
+  options?: PlanFromValidatedDraftOptions,
 ): PlannerGenerateResult | null {
   const { goal, steps: rawSteps } = body;
   if (!goal.trim()) return null;
@@ -66,6 +100,13 @@ export function planFromValidatedDraftBody(
   if (!stepIdsAreUnique(rawSteps)) return null;
   if (!dependsOnReferencesAreValid(rawSteps)) return null;
   if (!flightHotelDependencyValid(rawSteps)) return null;
+
+  const routeInferenceSource = [
+    options?.routeInferenceText?.trim(),
+    goal.trim(),
+  ]
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .join(" · ");
 
   const now = new Date();
   const steps: PlanStep[] = rawSteps.map((s) => {
@@ -81,6 +122,11 @@ export function planFromValidatedDraftBody(
       approvalRequired: requiresBookingApproval ? true : s.approvalRequired,
     };
   });
+
+  applyInferredCitiesToFlightSteps(
+    steps,
+    routeInferenceSource.length > 0 ? routeInferenceSource : goal.trim(),
+  );
 
   const plan: Plan = {
     id: crypto.randomUUID(),

@@ -27,7 +27,9 @@ export class GenerateTravelPlan {
       });
 
       if (draft.outcome === "plan") {
-        const built = planFromValidatedDraftBody(sessionId, draft);
+        const built = planFromValidatedDraftBody(sessionId, draft, {
+          routeInferenceText: userMessage,
+        });
         if (built) return built;
       }
 
@@ -57,7 +59,9 @@ export class GenerateTravelPlan {
       };
     }
 
-    const built = planFromValidatedDraftBody(sessionId, draft);
+    const built = planFromValidatedDraftBody(sessionId, draft, {
+      routeInferenceText: userMessage,
+    });
     if (!built) {
       return createPlannerSlotFallback(userMessage);
     }
