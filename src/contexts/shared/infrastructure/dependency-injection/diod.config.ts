@@ -32,6 +32,7 @@ import { ChooseOptionService } from "@/contexts/travel/trip/application/choose/C
 import { DecisionGraphWriter } from "@/contexts/travel/trip/application/graph/DecisionGraphWriter";
 import { GraphExecutor } from "@/contexts/travel/trip/application/graph/GraphExecutor";
 import { GraphSelectService } from "@/contexts/travel/trip/application/graph/GraphSelectService";
+import { GraphRefineService } from "@/contexts/travel/trip/application/graph/GraphRefineService";
 import { ATOOrchestrator } from "@/contexts/travel/trip/application/orchestrate/ATOOrchestrator";
 
 // Travel: Legacy (mantener para compatibilidad)
@@ -79,6 +80,7 @@ builder.registerAndUse(ChooseOptionService);
 builder.registerAndUse(DecisionGraphWriter);
 builder.registerAndUse(GraphExecutor);
 builder.registerAndUse(GraphSelectService);
+builder.registerAndUse(GraphRefineService);
 builder.registerAndUse(ATOOrchestrator);
 
 // Legacy

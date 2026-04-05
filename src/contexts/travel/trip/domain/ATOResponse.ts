@@ -5,6 +5,7 @@ import type { AuditEvent } from "./AuditEvent";
 import type { ApprovalLevel } from "./ApprovalPolicy";
 import type { PlannerMissingSlot } from "./PlannerResult";
 import type { PendingSelectionItem } from "./GraphExecutionCheckpoint";
+import type { FlightRecoverySuggestion } from "./FlightRecoveryPort";
 
 /** Bloqueo tras `search_flights` sin ofertas o con fallo del tool; no se ejecutan pasos de hotel. */
 export type FlightSearchBlockInfo = {
@@ -38,6 +39,8 @@ export type ATOResponse = {
   assistantMessage?: string;
   /** Campos pendientes (ids alineados con `slotValues` en el siguiente POST). */
   missingSlots?: PlannerMissingSlot[];
+  /** Tras bloqueo de vuelo: atajos que rellenan slots (p. ej. probar otro día). */
+  recoverySuggestions?: FlightRecoverySuggestion[];
   /** Barreras HITL de catálogo (vuelo/hotel); POST /api/graph/select y reanudar con resumeExecution. */
   pendingSelections?: PendingSelectionItem[];
   plan: Plan;

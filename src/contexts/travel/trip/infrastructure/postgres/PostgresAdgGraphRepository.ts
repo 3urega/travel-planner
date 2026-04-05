@@ -659,6 +659,32 @@ export class PostgresAdgGraphRepository {
   }
 
   /**
+   * Actualiza las opciones de un `selection_request` en espera (p. ej. refinamiento de shortlist).
+   */
+  async updateSelectionRequestFlightOptions(
+    graphVersionId: string,
+    selectionRequestLogicalId: string,
+    options: Array<{ id: string; label: string; priceUsd: number }>,
+  ): Promise<boolean> {
+    const res = await this.pool.get().query(
+      `UPDATE adg_graph_node
+       SET input = jsonb_set(input, '{options}', $1::jsonb, true),
+           metadata = metadata || $2::jsonb
+       WHERE graph_version_id = $3
+         AND logical_id = $4
+         AND node_type = 'selection_request'
+         AND status = 'waiting_user'`,
+      [
+        JSON.stringify(options),
+        JSON.stringify({ flightOptionsRefinedAt: new Date().toISOString() }),
+        graphVersionId,
+        selectionRequestLogicalId,
+      ],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
    * Inserta en una transacción: graph, versión inicial, nodo goal, nodos por paso,
    * y aristas `depends_on` (del paso dependiente al paso requerido).
    */

@@ -27,6 +27,7 @@ import { ReviewTradeoffsPanel } from "./center/ReviewTradeoffsPanel";
 import { StageLoadingSkeleton } from "./center/StageLoadingSkeleton";
 import type { PendingSelectionItem } from "@/contexts/travel/trip/domain/GraphExecutionCheckpoint";
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
+import type { FlightRefinementFilters } from "@/contexts/travel/trip/application/flights/flightRefinementTypes";
 import { findDecisionForCategory } from "./workflow/deriveWorkflowState";
 
 function flightChosenSummary(response: ATOResponse | null): string {
@@ -54,6 +55,11 @@ export function ATOWorkspacePage(): React.ReactElement {
     runFromGoal,
     continueSlots,
     selectCatalogOption,
+    refineFlightSelection,
+    flightStopsPreference,
+    setFlightStopsPreference,
+    flightTimePreference,
+    setFlightTimePreference,
   } = useWorkspaceAgent();
 
   const [optionBusy, setOptionBusy] = useState<string | null>(null);
@@ -84,6 +90,19 @@ export function ATOWorkspacePage(): React.ReactElement {
     }
   };
 
+  const onRefineFlight = async (
+    item: PendingSelectionItem,
+    filters: FlightRefinementFilters,
+  ): Promise<void> => {
+    const k = `refine:${item.selectionRequestLogicalId}`;
+    setOptionBusy(k);
+    try {
+      await refineFlightSelection(item, filters);
+    } finally {
+      setOptionBusy(null);
+    }
+  };
+
   const selectionFilter =
     workflow.currentStage === "select_flight"
       ? ("flight" as const)
@@ -100,7 +119,10 @@ export function ATOWorkspacePage(): React.ReactElement {
     <WorkspaceShell
       header={<WorkspaceHeader trip={trip} statusBadge={badge} />}
       belowHeader={
-        <StageProgressRail currentStage={workflow.currentStage} />
+        <StageProgressRail
+          currentStage={workflow.currentStage}
+          response={response}
+        />
       }
       sidebar={
         <TripContextSidebar
@@ -110,6 +132,10 @@ export function ATOWorkspacePage(): React.ReactElement {
           onPriceComfortChange={setPriceComfortSlider}
           maxPriceUsd={maxPriceUsd}
           onMaxPriceChange={setMaxPriceUsd}
+          flightStopsPreference={flightStopsPreference}
+          onFlightStopsPreferenceChange={setFlightStopsPreference}
+          flightTimePreference={flightTimePreference}
+          onFlightTimePreferenceChange={setFlightTimePreference}
         />
       }
       center={
@@ -149,6 +175,7 @@ export function ATOWorkspacePage(): React.ReactElement {
                   response={response}
                   busyKey={optionBusy}
                   onSelectOption={onSelectOption}
+                  onRefineFlight={onRefineFlight}
                   filterKind={selectionFilter}
                   showDecisionMemorial={false}
                 />
@@ -197,6 +224,7 @@ export function ATOWorkspacePage(): React.ReactElement {
                     response={response}
                     busyKey={optionBusy}
                     onSelectOption={onSelectOption}
+                    onRefineFlight={onRefineFlight}
                     filterKind={null}
                     showDecisionMemorial={true}
                   />

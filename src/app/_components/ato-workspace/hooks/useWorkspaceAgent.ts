@@ -5,22 +5,35 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
 import type { PendingSelectionItem } from "@/contexts/travel/trip/domain/GraphExecutionCheckpoint";
+import type { FlightRefinementFilters } from "@/contexts/travel/trip/application/flights/flightRefinementTypes";
+import type { FlightStopsPreferenceInput } from "@/contexts/travel/trip/domain/UserTravelPreferences";
 
 export type WorkspaceStatus = "idle" | "loading" | "done" | "error";
+
+export type FlightStopsPreference = FlightStopsPreferenceInput;
+export type FlightTimePreference = "any" | "morning" | "afternoon";
 
 function buildPreferencesBody(
   priceComfortSlider: number,
   maxPriceUsdInput: string,
+  flightStops: FlightStopsPreference,
+  flightTime: FlightTimePreference,
 ): Record<string, unknown> {
   const v = priceComfortSlider;
   const priceWeight = 1 - v / 100;
   const comfortWeight = v / 100;
   const maxParsed =
     maxPriceUsdInput.trim() === "" ? undefined : Number(maxPriceUsdInput);
+  const body: Record<string, unknown> = {
+    priceWeight,
+    comfortWeight,
+    flightStopsPreference: flightStops,
+  };
   if (maxParsed !== undefined && Number.isFinite(maxParsed) && maxParsed > 0) {
-    return { maxPriceUsd: maxParsed, priceWeight, comfortWeight };
+    body.maxPriceUsd = maxParsed;
   }
-  return { priceWeight, comfortWeight };
+  if (flightTime !== "any") body.flightTimeBand = flightTime;
+  return body;
 }
 
 export function useWorkspaceAgent(): {
@@ -45,6 +58,14 @@ export function useWorkspaceAgent(): {
     item: PendingSelectionItem,
     optionId: string,
   ) => Promise<void>;
+  refineFlightSelection: (
+    item: PendingSelectionItem,
+    filters: FlightRefinementFilters,
+  ) => Promise<void>;
+  flightStopsPreference: FlightStopsPreference;
+  setFlightStopsPreference: (v: FlightStopsPreference) => void;
+  flightTimePreference: FlightTimePreference;
+  setFlightTimePreference: (v: FlightTimePreference) => void;
 } {
   const [response, setResponse] = useState<ATOResponse | null>(null);
   const [status, setStatus] = useState<WorkspaceStatus>("idle");
@@ -54,6 +75,10 @@ export function useWorkspaceAgent(): {
   const [priceComfortSlider, setPriceComfortSlider] = useState(40);
   const [maxPriceUsd, setMaxPriceUsd] = useState("");
   const [slotDraft, setSlotDraft] = useState<Record<string, string>>({});
+  const [flightStopsPreference, setFlightStopsPreference] =
+    useState<FlightStopsPreference>("any");
+  const [flightTimePreference, setFlightTimePreference] =
+    useState<FlightTimePreference>("any");
 
   useEffect(() => {
     if (response?.phase === "awaiting_input" && response.missingSlots) {
@@ -68,8 +93,19 @@ export function useWorkspaceAgent(): {
   }, [response]);
 
   const preferences = useMemo(
-    () => buildPreferencesBody(priceComfortSlider, maxPriceUsd),
-    [priceComfortSlider, maxPriceUsd],
+    () =>
+      buildPreferencesBody(
+        priceComfortSlider,
+        maxPriceUsd,
+        flightStopsPreference,
+        flightTimePreference,
+      ),
+    [
+      priceComfortSlider,
+      maxPriceUsd,
+      flightStopsPreference,
+      flightTimePreference,
+    ],
   );
 
   const postAgent = useCallback(
@@ -203,6 +239,62 @@ export function useWorkspaceAgent(): {
     [postAgent, preferences, response, sessionIdForNext],
   );
 
+  const refineFlightSelection = useCallback(
+    async (item: PendingSelectionItem, filters: FlightRefinementFilters) => {
+      const gv = response?.adgGraphVersionId;
+      const sid = response?.sessionId ?? sessionIdForNext;
+      if (!gv || !sid) {
+        setError("Falta graphVersionId o sesión.");
+        return;
+      }
+      setError("");
+      try {
+        const r = await fetch("/api/graph/refine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: sid,
+            graphVersionId: gv,
+            selectionRequestLogicalId: item.selectionRequestLogicalId,
+            filters,
+          }),
+        });
+        const j = (await r.json()) as {
+          error?: string;
+          pendingSelection?: PendingSelectionItem;
+          decisions?: ATOResponse["decisions"];
+        };
+        if (!r.ok) throw new Error(j.error ?? `refine ${r.status}`);
+        if (!j.pendingSelection || !j.decisions) {
+          throw new Error("Respuesta de refinamiento incompleta.");
+        }
+        const updated = j.pendingSelection;
+        setResponse((prev) => {
+          if (!prev) return prev;
+          const list = prev.pendingSelections ?? [];
+          const idx = list.findIndex(
+            (p) =>
+              p.selectionRequestLogicalId ===
+              updated.selectionRequestLogicalId,
+          );
+          const pendingSelections =
+            idx >= 0
+              ? list.map((p, i) => (i === idx ? updated : p))
+              : [...list, updated];
+          return {
+            ...prev,
+            pendingSelections,
+            decisions: j.decisions!,
+          };
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error");
+        setStatus("error");
+      }
+    },
+    [response?.adgGraphVersionId, response?.sessionId, sessionIdForNext],
+  );
+
   return {
     response,
     status,
@@ -220,5 +312,10 @@ export function useWorkspaceAgent(): {
     continueSlots,
     resumeGraph,
     selectCatalogOption,
+    refineFlightSelection,
+    flightStopsPreference,
+    setFlightStopsPreference,
+    flightTimePreference,
+    setFlightTimePreference,
   };
 }

@@ -333,6 +333,23 @@ export class ATOOrchestrator {
     if (resolvedPrefs.maxPriceUsd !== undefined) {
       merged.maxPriceUsd = resolvedPrefs.maxPriceUsd;
     }
+    if (resolvedPrefs.flightMaxStops !== undefined) {
+      merged.flightMaxStops = resolvedPrefs.flightMaxStops;
+    } else {
+      delete merged.flightMaxStops;
+    }
+    if (resolvedPrefs.flightMaxStops === 0) {
+      merged.flightStopsPreference = "nonstop";
+    } else if (resolvedPrefs.flightMaxStops === 1) {
+      merged.flightStopsPreference = "one_stop";
+    } else {
+      merged.flightStopsPreference = "any";
+    }
+    if (resolvedPrefs.flightTimeBand !== undefined) {
+      merged.flightTimeBand = resolvedPrefs.flightTimeBand;
+    } else {
+      delete merged.flightTimeBand;
+    }
     return merged;
   }
 
@@ -413,6 +430,7 @@ export class ATOOrchestrator {
       phase: "awaiting_input",
       assistantMessage: recovery.assistantMessage,
       missingSlots: recovery.missingSlots,
+      recoverySuggestions: recovery.suggestions,
       flightSearchBlock: block,
       plan: placeholderPlan,
       simulation: stubSim,

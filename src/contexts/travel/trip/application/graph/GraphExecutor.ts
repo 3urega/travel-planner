@@ -3,6 +3,10 @@ import { Service } from "diod";
 import { ApprovalPolicyService } from "../approve/ApprovalPolicyService";
 import { DecisionEngine } from "../decide/DecisionEngine";
 import { AuditLogger } from "../audit/AuditLogger";
+import { curateFlightOptions } from "../flights/FlightOptionCurator";
+import { flightRefinementFromResolvedPrefs } from "../flights/flightRefinementTypes";
+import { rationaleForFlightTags } from "../flights/flightSelectionRationale";
+import { parseFlightToolRows } from "../flights/parseFlightToolRows";
 import { DecisionGraphWriter } from "./DecisionGraphWriter";
 import { PostgresAdgGraphRepository } from "../../infrastructure/postgres/PostgresAdgGraphRepository";
 import { executeWithResilience } from "../../infrastructure/tools/ToolExecutor";
@@ -22,15 +26,9 @@ import type {
 
 const INTERACTIVE_SEARCH_TYPES = new Set<string>(["search_flights", "search_hotels"]);
 
-type FlightToolRow = {
-  id: string;
-  airline: string;
-  price: number;
-  departureTime: string;
-  arrivalTime: string;
-  stops: number;
-  durationMinutes?: number;
-  displayLabel?: string;
+type RankIfSearchOutcome = {
+  decision: DecisionRecord;
+  flightTotalEligible?: number;
 };
 
 export type PlanStepExecutionResult = {
@@ -158,15 +156,16 @@ export class GraphExecutor {
 
         if (execResult.success) {
           let decision: DecisionRecord | null = null;
+          let flightSelectionTotalFound: number | undefined;
 
           if (step.type === "search_flights") {
-            decision = await this.rankIfSearch(
+            const flightRank = await this.rankIfSearch(
               step,
               execResult.data,
               sid,
               preferences,
             );
-            if (!decision) {
+            if (!flightRank) {
               const reason =
                 !Array.isArray(execResult.data) || execResult.data.length === 0
                   ? "La búsqueda no devolvió vuelos. Revisa origen, destino y fecha."
@@ -207,6 +206,8 @@ export class GraphExecutor {
                   : undefined,
               };
             }
+            decision = flightRank.decision;
+            flightSelectionTotalFound = flightRank.flightTotalEligible;
           }
 
           executedSteps.push({ stepId: step.id, result: execResult.data });
@@ -227,12 +228,13 @@ export class GraphExecutor {
           });
 
           if (step.type !== "search_flights") {
-            decision = await this.rankIfSearch(
+            const otherRank = await this.rankIfSearch(
               step,
               execResult.data,
               sid,
               preferences,
             );
+            decision = otherRank?.decision ?? null;
           }
 
           if (decision) {
@@ -267,11 +269,19 @@ export class GraphExecutor {
                 selectionKind:
                   decision.category === "hotel" ? "hotel" : "flight",
                 title,
+                ...(step.type === "search_flights" &&
+                flightSelectionTotalFound !== undefined
+                  ? { totalFound: flightSelectionTotalFound }
+                  : {}),
                 options: decision.options.map((o) => {
                   const base = {
                     id: o.id,
                     label: o.label,
                     priceUsd: o.price,
+                    ...(o.rationale !== undefined ? { rationale: o.rationale } : {}),
+                    ...(o.tags !== undefined && o.tags.length > 0
+                      ? { tags: o.tags }
+                      : {}),
                   };
                   if (step.type === "search_flights" && Array.isArray(execResult.data)) {
                     const detail = this.flightDetailForOption(
@@ -442,26 +452,31 @@ export class GraphExecutor {
     data: unknown,
     sessionId: string,
     preferences: ResolvedUserTravelPreferences,
-  ): Promise<DecisionRecord | null> {
+  ): Promise<RankIfSearchOutcome | null> {
     if (!Array.isArray(data) || data.length === 0) return null;
 
     if (step.type === "search_flights") {
-      const rows = this.parseFlightToolRows(data);
+      const rows = parseFlightToolRows(data);
       if (rows.length === 0) return null;
-      const durs = rows
-        .map((r) => r.durationMinutes)
-        .filter((d): d is number => d !== undefined && Number.isFinite(d));
-      const minDur = durs.length > 0 ? Math.min(...durs) : 0;
-      const maxDur = durs.length > 0 ? Math.max(...durs) : 1;
-      const durSpan = maxDur - minDur || 1;
-      const options = rows.map((f) => ({
-        id: f.id,
-        label:
-          f.displayLabel ??
-          `${f.airline} (${f.departureTime}→${f.arrivalTime}) $${f.price}`,
-        price: f.price,
-        comfortProxy: this.compositeFlightComfort(f, minDur, durSpan),
-      }));
+      const curated = curateFlightOptions(
+        rows,
+        flightRefinementFromResolvedPrefs(preferences),
+      );
+      if (curated.shortlist.length === 0) return null;
+
+      const options = curated.shortlist.map((f) => {
+        const tags = curated.tagsByFlightId.get(f.id) ?? [];
+        return {
+          id: f.id,
+          label:
+            f.displayLabel ??
+            `${f.airline} (${f.departureTime}→${f.arrivalTime}) $${f.price}`,
+          price: f.price,
+          comfortProxy: curated.comfortById.get(f.id) ?? 0,
+          ...(tags.length > 0 ? { tags } : {}),
+          rationale: rationaleForFlightTags(tags),
+        };
+      });
       const decision = this.decisionEngine.rank(
         sessionId,
         "flight",
@@ -474,7 +489,7 @@ export class GraphExecutor {
         actor: "system",
         payloadSnapshot: { category: "flight", chosenId: decision.chosenId },
       });
-      return decision;
+      return { decision, flightTotalEligible: curated.totalEligible };
     }
 
     if (step.type === "search_hotels") {
@@ -502,69 +517,17 @@ export class GraphExecutor {
         actor: "system",
         payloadSnapshot: { category: "hotel", chosenId: decision.chosenId },
       });
-      return decision;
+      return { decision };
     }
 
     return null;
-  }
-
-  private parseFlightToolRows(data: unknown): FlightToolRow[] {
-    if (!Array.isArray(data)) return [];
-    const out: FlightToolRow[] = [];
-    for (const item of data) {
-      if (typeof item !== "object" || item === null) continue;
-      const o = item as Record<string, unknown>;
-      const id = typeof o.id === "string" ? o.id : "";
-      if (!id) continue;
-      const priceRaw = o.priceUsd ?? o.price;
-      const price =
-        typeof priceRaw === "number" ? priceRaw : Number(priceRaw);
-      if (!Number.isFinite(price)) continue;
-      const dep =
-        typeof o.departureTime === "string"
-          ? o.departureTime
-          : typeof o.departure === "string"
-            ? o.departure
-            : "00:00";
-      const arr =
-        typeof o.arrivalTime === "string"
-          ? o.arrivalTime
-          : typeof o.arrival === "string"
-            ? o.arrival
-            : "00:00";
-      const stopsRaw = o.stops;
-      const stops =
-        typeof stopsRaw === "number"
-          ? stopsRaw
-          : Number.isFinite(Number(stopsRaw))
-            ? Number(stopsRaw)
-            : 0;
-      const dm = o.durationMinutes;
-      const durationMinutes =
-        dm !== undefined && Number.isFinite(Number(dm))
-          ? Number(dm)
-          : undefined;
-      const displayLabel =
-        typeof o.displayLabel === "string" ? o.displayLabel : undefined;
-      out.push({
-        id,
-        airline: typeof o.airline === "string" ? o.airline : "",
-        price,
-        departureTime: dep,
-        arrivalTime: arr,
-        stops,
-        durationMinutes,
-        displayLabel,
-      });
-    }
-    return out;
   }
 
   private flightDetailForOption(
     optionId: string,
     data: unknown,
   ): SelectionOptionFlightDetail | undefined {
-    const row = this.parseFlightToolRows(data).find((r) => r.id === optionId);
+    const row = parseFlightToolRows(data).find((r) => r.id === optionId);
     if (!row) return undefined;
     return {
       airline: row.airline,
@@ -575,24 +538,4 @@ export class GraphExecutor {
     };
   }
 
-  private flightComfortProxy(departure: string): number {
-    const [h = "0", m = "0"] = departure.split(":");
-    const minutes = parseInt(h, 10) * 60 + parseInt(m, 10);
-    return Math.max(0, 1 - Math.abs(minutes - 600) / 600);
-  }
-
-  private compositeFlightComfort(
-    f: FlightToolRow,
-    minDur: number,
-    durSpan: number,
-  ): number {
-    const timePref = this.flightComfortProxy(f.departureTime);
-    const stopPref = 1 / (1 + f.stops * 0.35);
-    let durPref = 0.65;
-    if (f.durationMinutes !== undefined && Number.isFinite(f.durationMinutes)) {
-      durPref = 1 - (f.durationMinutes - minDur) / durSpan;
-      durPref = Math.max(0, Math.min(1, durPref));
-    }
-    return 0.45 * timePref + 0.35 * stopPref + 0.2 * durPref;
-  }
 }

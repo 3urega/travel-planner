@@ -5,6 +5,11 @@ import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
+import {
+  buildWorkspaceStageStatusHint,
+  deriveProgressStages,
+} from "../adapters";
 import { type WorkspaceStage, WORKSPACE_STAGES, stageIndex } from "../workflow/types";
 
 const LABELS: Record<WorkspaceStage, string> = {
@@ -16,14 +21,29 @@ const LABELS: Record<WorkspaceStage, string> = {
   execute_ready: "Operar",
 };
 
+const rowDotClass: Record<
+  "locked" | "waiting" | "active" | "completed",
+  string
+> = {
+  locked: "bg-muted-foreground/35",
+  waiting: "bg-amber-500",
+  active: "bg-primary",
+  completed: "bg-emerald-600",
+};
+
 export function StageProgressRail({
   currentStage,
+  response,
   className,
 }: {
   currentStage: WorkspaceStage;
+  /** Si se pasa, se muestra línea de detalle del plan de ejecución y estado contextual. */
+  response?: ATOResponse | null;
   className?: string;
 }): React.ReactElement {
   const currentIdx = stageIndex(currentStage);
+  const statusHint = buildWorkspaceStageStatusHint(response ?? null, currentStage);
+  const planRows = deriveProgressStages(response ?? null);
 
   return (
     <nav
@@ -91,6 +111,39 @@ export function StageProgressRail({
           );
         })}
       </ol>
+      {response && (
+        <div className="mt-3 border-t border-border/60 pt-3">
+          <p className="mb-2 text-[11px] leading-snug text-muted-foreground md:text-xs">
+            {statusHint}
+          </p>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1.5">
+            {planRows.map((row) => (
+              <li
+                key={row.id}
+                className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground md:text-[11px]"
+              >
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    rowDotClass[row.state],
+                  )}
+                  aria-hidden
+                />
+                <span className="text-foreground/85">{row.label}</span>
+                <span className="tabular-nums uppercase tracking-wider text-[9px] opacity-70">
+                  {row.state === "waiting"
+                    ? "espera"
+                    : row.state === "active"
+                      ? "activo"
+                      : row.state === "completed"
+                        ? "ok"
+                        : "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </nav>
   );
 }

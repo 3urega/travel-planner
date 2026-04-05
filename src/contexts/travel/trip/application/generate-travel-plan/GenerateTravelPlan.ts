@@ -29,6 +29,7 @@ export class GenerateTravelPlan {
       if (draft.outcome === "plan") {
         const built = planFromValidatedDraftBody(sessionId, draft, {
           routeInferenceText: userMessage,
+          gatheredSlots,
         });
         if (built) return built;
       }
@@ -61,6 +62,7 @@ export class GenerateTravelPlan {
 
     const built = planFromValidatedDraftBody(sessionId, draft, {
       routeInferenceText: userMessage,
+      gatheredSlots,
     });
     if (!built) {
       return createPlannerSlotFallback(userMessage);

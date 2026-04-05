@@ -31,6 +31,8 @@ export type SelectionOptionPayload = {
   label: string;
   priceUsd?: number;
   detail?: SelectionOptionFlightDetail;
+  rationale?: string;
+  tags?: string[];
 };
 
 export type AwaitingSelectionPayload = {
@@ -40,6 +42,8 @@ export type AwaitingSelectionPayload = {
   selectionKind: "flight" | "hotel";
   title: string;
   options: SelectionOptionPayload[];
+  /** Nº de ofertas elegibles antes de la shortlist (p. ej. vuelos tras filtrar basura). */
+  totalFound?: number;
 };
 
 export type GraphExecutionCheckpoint = {
@@ -215,6 +219,9 @@ export function checkpointFromPreferenceJson(
       selectionKind: a.selectionKind as AwaitingSelectionPayload["selectionKind"],
       title: a.title,
       options: a.options as SelectionOptionPayload[],
+      ...(typeof a.totalFound === "number" && Number.isFinite(a.totalFound)
+        ? { totalFound: a.totalFound }
+        : {}),
     };
   }
 

@@ -19,6 +19,17 @@ const slotRoleSchema = z.enum([
   "origin",
 ]);
 
+const recoverySuggestionSchema = z.object({
+  kind: z.enum([
+    "shift_date",
+    "allow_stops",
+    "expand_airports",
+    "relax_budget",
+  ]),
+  label: z.string().min(1),
+  patch: z.record(z.string(), z.string()).optional(),
+});
+
 /** JSON `need_input` para planner estándar y recuperación tras fallo de vuelo. */
 export const flightRecoveryNeedInputSchema = z.object({
   kind: z.literal("need_input"),
@@ -33,6 +44,7 @@ export const flightRecoveryNeedInputSchema = z.object({
     )
     .min(1)
     .max(5),
+  suggestions: z.array(recoverySuggestionSchema).max(3).optional(),
 });
 
 const needInputSchema = flightRecoveryNeedInputSchema;

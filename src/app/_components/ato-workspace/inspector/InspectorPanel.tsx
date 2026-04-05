@@ -11,6 +11,7 @@ import type { PendingApprovalItem } from "@/contexts/travel/trip/domain/ATORespo
 import type { AuditEvent } from "@/contexts/travel/trip/domain/AuditEvent";
 import { cn } from "@/lib/utils";
 import type { WorkspaceStage } from "../workflow/types";
+import { deriveProgressStages } from "../adapters";
 
 function levelStyle(
   level: PendingApprovalItem["level"],
@@ -102,6 +103,72 @@ function DecisionsIntel({
   );
 }
 
+function ExecutionProgressCard({
+  response,
+}: {
+  response: ATOResponse;
+}): React.ReactElement {
+  const rows = deriveProgressStages(response);
+  const steps = response.executedSteps ?? [];
+
+  return (
+    <div className="ato-noise ato-glass-cool rounded-2xl">
+      <CardHeader className="pb-2">
+        <span className="ato-kicker mb-1">Estado</span>
+        <CardTitle className="font-ato-display normal-case tracking-normal text-lg text-card-cool-foreground">
+          Progreso del plan
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ul className="space-y-2">
+          {rows.map((r) => (
+            <li
+              key={r.id}
+              className="flex items-center justify-between gap-2 text-[11px]"
+            >
+              <span className="text-foreground/90">{r.label}</span>
+              <Badge
+                variant={
+                  r.state === "completed"
+                    ? "success"
+                    : r.state === "waiting"
+                      ? "warning"
+                      : r.state === "active"
+                        ? "accent"
+                        : "muted"
+                }
+                className="text-[10px]"
+              >
+                {r.state === "waiting"
+                  ? "Espera"
+                  : r.state === "active"
+                    ? "En curso"
+                    : r.state === "completed"
+                      ? "Hecho"
+                      : "Bloqueado"}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+        {steps.length > 0 && (
+          <div className="border-t border-border/60 pt-2">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Pasos ejecutados
+            </p>
+            <ul className="max-h-28 space-y-1 overflow-y-auto font-mono text-[10px] text-muted-foreground">
+              {steps.map((s) => (
+                <li key={s.stepId}>
+                  <span className="text-primary/80">{s.stepId}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </div>
+  );
+}
+
 export function InspectorPanel({
   response,
   currentStage,
@@ -111,6 +178,9 @@ export function InspectorPanel({
 }): React.ReactElement {
   const approvals = response?.pendingApprovals ?? [];
   const events = response?.auditEvents ?? [];
+  const progressCard = response ? (
+    <ExecutionProgressCard response={response} />
+  ) : null;
 
   const showDecisionsIntel =
     response &&
@@ -232,6 +302,7 @@ export function InspectorPanel({
   if (currentStage === "define_trip") {
     return (
       <div className="flex flex-col gap-5">
+        {progressCard}
         {assistantCard}
         {graphBlock}
         {auditBlock}
@@ -245,6 +316,7 @@ export function InspectorPanel({
   ) {
     return (
       <div className="flex flex-col gap-5">
+        {progressCard}
         {approvalsBlock}
         {decisionsBlock}
         {auditBlock}
@@ -255,6 +327,7 @@ export function InspectorPanel({
 
   return (
     <div className="flex flex-col gap-5">
+      {progressCard}
       {decisionsBlock}
       {approvalsBlock}
       {graphBlock}

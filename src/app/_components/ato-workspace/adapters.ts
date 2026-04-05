@@ -1,5 +1,6 @@
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
 import type { PlanStepType } from "@/contexts/travel/trip/domain/Plan";
+import type { WorkspaceStage } from "./workflow/types";
 
 export type HeaderTripMeta = {
   title: string;
@@ -211,6 +212,58 @@ export function deriveProgressStages(
     { id: "sim", label: "Simulación", state: simState },
     { id: "appr", label: "Aprobación / ejecución", state: apprState },
   ];
+}
+
+const STAGE_HINT: Record<WorkspaceStage, string> = {
+  define_trip: "Cuéntanos el viaje o completa los datos que faltan.",
+  select_flight: "Elige un vuelo de la shortlist o ajusta filtros.",
+  select_hotel: "Elige una estancia alineada con tu tramo.",
+  review_trip: "Revisa costes y matices antes del siguiente paso.",
+  approve: "Hay decisiones que requieren tu visto bueno explícito.",
+  execute_ready: "El operador puede actuar sobre los pasos completados.",
+};
+
+/**
+ * Texto contextual bajo el rail de etapas (fase API + bloqueos).
+ */
+export function buildWorkspaceStageStatusHint(
+  response: ATOResponse | null,
+  currentStage: WorkspaceStage,
+): string {
+  if (!response) return STAGE_HINT[currentStage];
+
+  if (response.flightSearchBlock) {
+    const code =
+      response.flightSearchBlock.code === "flight_tool_failed"
+        ? "Fallo al buscar vuelos"
+        : "Sin ofertas elegibles";
+    return `${code}: ${response.flightSearchBlock.reason.slice(0, 120)}${
+      response.flightSearchBlock.reason.length > 120 ? "…" : ""
+    }`;
+  }
+
+  switch (response.phase) {
+    case "awaiting_input":
+      return response.assistantMessage
+        ? response.assistantMessage.slice(0, 160) +
+            (response.assistantMessage.length > 160 ? "…" : "")
+        : STAGE_HINT.define_trip;
+    case "awaiting_selection": {
+      const k = response.pendingSelections?.[0]?.selectionKind;
+      if (k === "flight") return "Esperando tu elección de vuelo.";
+      if (k === "hotel") return "Esperando tu elección de hotel.";
+      return "Esperando tu elección.";
+    }
+    case "ready":
+      if (response.pendingApprovals.length > 0) {
+        return "Revisión de políticas pendiente.";
+      }
+      return "Itinerario listo para revisar o continuar.";
+    case "blocked":
+      return "Flujo bloqueado; revisa el mensaje del sistema.";
+    default:
+      return STAGE_HINT[currentStage];
+  }
 }
 
 export function planStepOrderIndex(type: PlanStepType): number {

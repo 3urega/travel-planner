@@ -18,6 +18,8 @@ type RawOption = {
   price: number;
   /** Proxy de confort ya normalizado a 0–1 (p. ej. estrellas/5 para hoteles). */
   comfortProxy: number;
+  rationale?: string;
+  tags?: string[];
 };
 
 /**
@@ -75,6 +77,8 @@ export class DecisionEngine {
         comfortScore: Math.round(comfortScore * 100) / 100,
         totalScore: Math.round(totalScore * 100) / 100,
         chosen: false,
+        ...(opt.rationale !== undefined && { rationale: opt.rationale }),
+        ...(opt.tags !== undefined && opt.tags.length > 0 && { tags: opt.tags }),
       };
     });
 

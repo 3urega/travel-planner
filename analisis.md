@@ -1,533 +1,141 @@
-Sí.
-Esto **ya está en muy buen nivel**. De hecho, ahora mismo lo que tienes no es “una idea suelta”, sino casi una **RFC interna seria**.
+# AI Travel Agent (ATO): qué ofrece la app y flujo end-to-end
 
-Mi opinión sincera:
-
-> **Si implementáis exactamente esto, la integración de fli quedará profesional.**
-
-No “funcional”.
-No “apañada”.
-**Profesional**.
-
-Y te diría algo importante: **ya no necesitas más teoría**, necesitas una **versión ejecutable para tu agente** que convierta esto en cambios reales de código sin que se desvíe.
-
-Así que te voy a hacer lo útil:
-
-# Te convierto todo esto en un **prompt de implementación definitivo para Cursor**
-
-No tanto “visionario”, sino **operativo, estricto y con criterio senior**.
+Documento orientado a producto y a desarrollo. Describe el comportamiento real del código en este repositorio (Next.js 16, orquestador `ATOOrchestrator`, ejecución `GraphExecutor`, LLM vía OpenAI-compatible, Postgres para sesión y auditoría).
 
 ---
 
-# PROMPT DEFINITIVO PARA CURSOR — Integración de `fli` como Flight Search Provider
+## 1. Qué es la aplicación
 
-````md
-Quiero que implementes la integración de la librería `fli` dentro del proyecto **ATO (Autonomous Travel Operator)** como **proveedor real de búsqueda de vuelos**, pero respetando estrictamente la arquitectura actual del sistema.
-
-No quiero una integración rápida o acoplada. Quiero una implementación **arquitectónicamente correcta**, incremental, limpia y defendible ante un senior engineer.
-
----
-
-# CONTEXTO DE PRODUCTO
-
-Este proyecto no es un simple chatbot. Es un sistema con pipeline:
-
-**Goal → Plan → Simulate → Decide → Approve → Execute → Audit**
-
-La búsqueda de vuelos es solo una **capacidad operativa del sistema**.  
-`fli` no es el cerebro, ni el planner, ni el agente: es solo un **proveedor de datos del mundo real** que materializa la capacidad `search_flights`.
-
-La arquitectura debe seguir transmitiendo esta idea:
-
-> **El ATO orquesta; los proveedores solo materializan capacidades.**
+- **Interfaz**: workspace de viajes (objetivo en lenguaje natural, preferencias opcionales de presupuesto y peso precio/confort, cronología de auditoría, pasos del plan y catálogos cuando aplica).
+- **Cerebro**: un **planificador LLM** que devuelve JSON estructurado (`plan` con pasos tipados o `need_input` si faltan datos).
+- **Ejecución controlada**: tras un plan válido, un motor ejecuta herramientas (`search_flights`, `search_hotels`, etc.) en orden con dependencias, con **human-in-the-loop (HITL)** para elegir vuelo y hotel entre opciones rankeadas.
+- **Persistencia**: sesión y preferencias en **Postgres**; **grafo de decisiones (ADG)** y eventos de auditoría para trazabilidad.
+- **Vuelos reales o mock**: según `FLIGHT_SEARCH_PROVIDER` (`mock` por defecto, o `fli` con puente Python). Ver `docs/flight-search-provider.md`.
 
 ---
 
-# RESTRICCIONES OBLIGATORIAS (NO NEGOCIABLES)
+## 2. Punto de entrada del usuario (primera descripción)
 
-## 1) PROHIBIDO integrar `fli` directamente en `MockTravelTools.ts`
+1. El usuario escribe un **objetivo de viaje** (texto libre) en el workspace.
+2. Opcionalmente ajusta **preferencias** enviadas al API: `maxPriceUsd`, `priceWeight`, `comfortWeight` (la UI suele exponer slider precio/confort y campo de presupuesto máximo).
+3. La UI llama **`POST /api/agent`** con cuerpo JSON típico:
+   - `message`: objetivo del viaje.
+   - `preferences` (opcional).
+   - `sessionId` (opcional): si ya hay sesión, se reutiliza.
 
-No quiero:
-
-- imports Python en `MockTravelTools.ts`
-- subprocess en `MockTravelTools.ts`
-- parsing de Google Flights ahí
-- lógica técnica del proveedor mezclada con tools mock
-
-`MockTravelTools.ts` puede seguir existiendo para hoteles / reservas / tools auxiliares, pero **la capacidad de vuelos debe extraerse**.
-
----
-
-## 2) `search_flights.execute()` debe ser una capa delgada
-
-La tool `search_flights` no debe conocer a `fli` ni a Python.
-
-Debe hacer solo esto:
-
-1. parsear/validar args del producto
-2. llamar a `flightSearchPort.search(query)`
-3. devolver datos serializables del producto
-
-Nada más.
-
-No quiero subprocess, bridges, ni modelos del proveedor dentro de esa tool.
+4. El **`ATOOrchestrator`**:
+   - Crea o carga sesión en Postgres.
+   - Fusiona slots guardados (`gatheredSlots` en preferencias) con lo nuevo.
+   - Llama a **`GenerateTravelPlan`** con el mensaje y los slots reunidos.
 
 ---
 
-## 3) Quiero un puerto de dominio real
+## 3. Detección de datos faltantes (el LLM “pide fechas” u otros datos)
 
-Debes introducir un contrato explícito de dominio para búsqueda de vuelos, por ejemplo:
+El planificador puede responder de dos formas principales:
 
-- `FlightSearchPort`
-- `FlightSearchQuery`
-- `NormalizedFlightOffer`
+### 3.1 `need_input` → fase API `awaiting_input`
 
-Este contrato debe describir **lo que necesita el ATO**, no la forma interna de `fli`.
+- El modelo devuelve JSON con `kind: "need_input"`, un **`assistantMessage`** (pregunta o explicación) y **`missingSlots`**: lista de campos con `id`, `role` y `label`.
+- **Roles cerrados** (dominio): `outbound_date`, `return_date`, `destination`, `origin` (este último añadido para recuperación y formularios).
+- Si el usuario habla de “navidades” o “en abril” **sin fechas en calendario ISO**, el prompt del planner obliga a **no inventar fechas** y a pedir `need_input` con fechas concretas (`YYYY-MM-DD`).
 
----
+### 3.2 Cómo continúa el usuario
 
-## 4) El planner NO debe saber que existe `fli`
+- La UI muestra el mensaje del asistente y **formularios por slot**:
+  - `destination` y `origin`: input de texto (ciudad o IATA).
+  - Fechas: input tipo fecha.
+- Al pulsar continuar, la UI llama **`POST /api/agent`** con:
+  - `sessionId`
+  - `slotValues`: mapa `{ [slot.id]: valor }` (no hace falta repetir `message` si solo se envían slots; el servidor acepta continuación solo con slots).
 
-El planner debe seguir generando planes como:
+Los valores se **persisten** en la sesión (`gatheredSlots`) y el siguiente plan del LLM los ve en el prompt como **[Gathered travel data]**. Además, en **`planFromValidatedDraftBody`** se **fusionan** con los pasos `search_flights` (p. ej. `recovery_origin` / `recovery_destination` tras un fallo de vuelo).
 
-```json
-{
-  "type": "search_flights",
-  "args": {
-    "from": "BCN",
-    "to": "PAR",
-    "date": "2026-12-23"
-  }
-}
-````
+### 3.3 Fechas ya completas
 
-No quiero introducir en prompts o estructuras del planner nada como:
-
-* `provider`
-* `fli`
-* `google flights`
-* `mcp`
-
-El planner sigue pensando en capacidades del producto, no en infraestructura.
+- Si en `gatheredSlots` hay **ida y vuelta** en formato **`YYYY-MM-DD`** (claves `outbound`/`outbound_date` y `return`/`return_date`), `GenerateTravelPlan` usa la variante de prompt **`confirmed_dates`**: el modelo debe devolver un `plan` sin volver a pedir esas fechas, y puede usarse plantilla de respaldo (`DefaultLeisureTripPlanTemplate`) si el JSON del plan no valida.
 
 ---
 
-## 5) `GraphExecutor` debe seguir siendo el punto de ejecución
+## 4. Cuando hay plan completo: simulación, grafo y ejecución
 
-La lógica conceptual actual debe mantenerse:
-
-* el planner produce un plan
-* `GraphExecutor` recorre pasos
-* cuando ve `search_flights`, ejecuta esa capacidad
-* luego `DecisionEngine` rankea opciones
-* si aplica, se crea una selección humana
-
-No quiero mover la orquestación fuera del ATO actual.
-Quiero desacoplar el proveedor, no rediseñar todo el sistema.
+1. **Auditoría**: evento `plan_generated`.
+2. **ADG**: `DecisionGraphWriter.persistPlanGraph` guarda el grafo (versión asociada a la sesión). Si falla, el flujo puede seguir sin `graphVersionId` (con limitaciones en selección interactiva).
+3. **`SimulationService.simulate(plan)`**: estimación de costes por tipo de paso, detección de conflictos de dependencias y reglas del estilo “no reservar vuelo sin búsqueda previa”.
+4. **`GraphExecutor.runPlanStepExecutionPhase`**:
+   - Ordena pasos por **dependencias** (topológico desde Postgres si hay grafo, si no por el plan).
+   - Para cada paso: **política de aprobación** (`ApprovalPolicyService`); si es `auto`, ejecuta la herramienta del **`TravelToolCatalog`**.
 
 ---
 
-## 6) Quiero resultados NORMALIZADOS
+## 5. Vuelos: de “salen todos los vuelos” a la selección
 
-No quiero que el `DecisionEngine` ni la UI consuman objetos crudos de `fli`.
+### 5.1 Ejecución de `search_flights`
 
-Quiero una normalización hacia un modelo del producto, por ejemplo:
+- La herramienta valida argumentos (Zod), rechaza placeholders literales `Origin`/`Destination`, y delega en **`FlightSearchPort`**:
+  - **mock**: tres ofertas de ejemplo.
+  - **fli**: proceso Python (`fli_search_bridge.py`) con normalización de ciudades a IATA donde hay alias.
 
-* `id`
-* `airline`
-* `priceUsd`
-* `departureTime`
-* `arrivalTime`
-* `stops`
-* `durationMinutes`
-* `originCode`
-* `destinationCode`
-* `displayLabel`
-* `comfortProxy`
+### 5.2 Ranking (no es el usuario quien ve “todos los vuelos crudos” sin filtrar)
 
-Si en la primera iteración algunos campos no están disponibles, documentarlo claramente y dejar TODO preparado para enriquecerlo.
+- Tras una ejecución **exitosa**, los resultados pasan por **`DecisionEngine.rank`** (precio vs confort según pesos del usuario y opcionalmente `maxPriceUsd`).
+- Se construye un **`DecisionRecord`** con opciones puntuadas y una recomendación; en paralelo se persisten nodos del grafo (`selection_request`, etc., cuando hay `graphVersionId`).
 
----
+### 5.3 Cómo **selecciona el usuario** un vuelo (HITL)
 
-## 7) Quiero un bridge Python AISLADO
+1. La respuesta API pasa a **`phase: awaiting_selection`** con **`pendingSelections`**: primer ítem suele ser el vuelo (`selectionKind: "flight"`), con opciones resumidas (`id`, `label`, `priceUsd`, detalles de vuelo si aplica).
+2. En la UI, el usuario **elige una opción** (tarjeta / botón).
+3. Eso dispara dos pasos en cadena (ver `useWorkspaceAgent.selectCatalogOption`):
+   - **`POST /api/graph/select`**: registra en backend `sessionId`, `graphVersionId`, `selectionRequestLogicalId`, `selectedOptionId`.
+   - **`POST /api/agent`** con **`resumeExecution: true`** y el mismo `sessionId`: el orquestador **reanuda** el `GraphExecutor` con un **checkpoint** (pasos ya completincludes la selección aplicada al grafo).
+4. El motor continúa con el **siguiente paso** del plan (normalmente **`search_hotels`**, que depende transitivamente del vuelo).
 
-`fli` es Python. No quiero mezclar eso con el core TS.
+Sin `graphVersionId` válido, la condición para pausar en selección interactiva puede no cumplirse según el código; en entorno sano con ADG persistido, el flujo anterior es el previsto.
 
-Debes diseñar un bridge pequeño y aislado, por ejemplo:
+### 5.4 Si el vuelo falla o no hay ofertas elegibles
 
-* TypeScript invoca un script Python
-* pasa JSON de entrada
-* Python ejecuta `fli`
-* devuelve JSON
-* TypeScript lo parsea y normaliza
-
-Ese bridge debe vivir solo en infraestructura.
-
-No quiero meter MCP ni protocolos extraños dentro del core del ATO.
+- El ejecutor devuelve **`executionPhase: blocked`** con `flightBlock` (`flight_tool_failed` o `no_flight_offers`).
+- **No** se ejecutan hoteles hasta tener un camino de vuelo válido (diseño explícito).
+- **Recuperación**: el orquestador llama a **`FlightRecoveryPort`** (LLM + fallback) y responde **`awaiting_input`** con mensaje y slots (p. ej. origen/destino/fechas), manteniendo contexto de error en `flightSearchBlock` para la UI. Los slots `recovery_*` se aplican de forma prioritaria al ensamblar el siguiente plan.
 
 ---
 
-## 8) Quiero DI + proveedor intercambiable
+## 6. Hoteles
 
-Debes permitir elegir proveedor por configuración, por ejemplo:
-
-* `FLIGHT_SEARCH_PROVIDER=mock`
-* `FLIGHT_SEARCH_PROVIDER=fli`
-
-El contenedor DI debe decidir qué implementación usar.
-
-No quiero imports estáticos directos del proveedor dentro de `GraphExecutor`.
+- Paso **`search_hotels`**: misma idea — ejecución del tool (mock u otro), ranking con **`DecisionEngine`**, y si aplica **`awaiting_selection`** con `selectionKind: "hotel"`.
+- Selección humana otra vez vía **`POST /api/graph/select`** + **`resumeExecution`**.
 
 ---
 
-# QUÉ QUIERO QUE HAGAS
+## 7. Fase `ready` y cierre
 
-## FASE 0 — ANALIZA EL REPO PRIMERO
+- Si no hay más aprobaciones pendientes ni selecciones pendientes, el executor termina; la sesión puede quedar `completed` (u otros estados según aprobaciones).
+- La respuesta incluye **plan**, **simulación**, **decisiones**, **pasos ejecutados**, **auditoría** (`auditEvents`), **resumen** (`summary`).
 
-Antes de escribir código:
+### `phase: blocked` (legado)
 
-1. inspecciona el estado actual del repo
-2. detecta exactamente dónde están hoy:
-
-   * `search_flights`
-   * `MockTravelTools`
-   * `GraphExecutor`
-   * `TravelPlannerUseCase`
-   * `DecisionEngine`
-   * DI / composición raíz
-3. explica brevemente qué piezas vas a tocar y por qué
-
-No empieces a editar a ciegas.
+- El tipo **`blocked`** sigue existiendo en el contrato `ATOResponse` por si algún flujo lo devuelve; el camino principal tras fallo de vuelo con recuperación es **`awaiting_input`** con `flightSearchBlock`, no un callejón sin formulario.
 
 ---
 
-# OBJETIVO ARQUITECTÓNICO
+## 8. APIs relevantes (resumen)
 
-Quiero que introduzcas una **Flight Capability Layer** real dentro del ATO.
-
-La idea es esta:
-
-```mermaid
-flowchart LR
-  subgraph app [Application]
-    Planner[Planner_ADG]
-    GraphExec[GraphExecutor]
-    Decision[DecisionEngine]
-  end
-
-  subgraph infra [Infrastructure]
-    Tools[TravelToolCatalog]
-    Port[FlightSearchPort]
-    Mock[MockFlightSearchAdapter]
-    Fli[FliFlightSearchAdapter]
-    Py[Python_fli_bridge]
-  end
-
-  Planner --> GraphExec
-  GraphExec --> Tools
-  Tools -->|search_flights.execute| Port
-  Port --> Mock
-  Port --> Fli
-  Fli --> Py
-  GraphExec --> Decision
-```
+| Endpoint | Rol |
+|----------|-----|
+| `POST /api/agent` | Mensaje inicial, continuación con `slotValues`, `resumeExecution` tras selección. |
+| `POST /api/graph/select` | Registra la opción humana elegida para un `selection_request` del grafo. |
+| `POST /api/agent/choose` | Flujo legacy/adjunto al use case antiguo (ver código si se usa desde UI). |
+| `GET /api/health` | Salud del servicio. |
 
 ---
 
-# IMPLEMENTACIÓN ESPERADA
+## 9. Observabilidad y depuración
 
-## FASE 1 — Introducir contrato de búsqueda de vuelos
-
-Crea los tipos/contratos de dominio necesarios para desacoplar la capacidad de búsqueda de vuelos.
-
-Quiero algo como:
-
-### `FlightSearchQuery`
-
-Debe representar el input del producto.
-Alinear con lo que hoy usa `search_flights`, pero permitir evolución futura.
-
-Campos mínimos:
-
-* `from`
-* `to`
-* `date`
-
-Campos opcionales preparados:
-
-* `budget`
-* `cabin`
-* `adults`
-* `nonStop`
-
-### `NormalizedFlightOffer`
-
-Debe representar una oferta de vuelo en términos del producto, no del proveedor.
-
-Campos sugeridos:
-
-* `id`
-* `airline`
-* `priceUsd`
-* `departureTime`
-* `arrivalTime`
-* `stops`
-* `durationMinutes`
-* `originCode`
-* `destinationCode`
-* `displayLabel`
-
-### `FlightSearchPort`
-
-Puerto abstracto de dominio con método:
-
-* `search(query: FlightSearchQuery): Promise<NormalizedFlightOffer[]>`
-
-Usa el patrón ya existente en el repo para puertos/adaptadores (por ejemplo el precedente de `TravelPlanDraftPort` si aplica).
+- **Auditoría**: `session_created`, `input_required`, `plan_generated`, `simulation_run`, `tool_called`, `tool_failed`, `step_blocked`, `flight_recovery_input_required`, etc.
+- **Vuelos**: variable de entorno `ATO_FLIGHT_DEBUG=1` en el proceso Node → logs `[ATO][search_flights]` en la terminal del servidor (ver `docs/flight-search-provider.md`).
 
 ---
 
-## FASE 2 — Extraer la lógica mock a un adaptador formal
+## 10. Idea clave de producto
 
-Crea `MockFlightSearchAdapter`.
-
-Objetivo:
-
-* mover la lógica actual mock de vuelos fuera de `MockTravelTools.ts`
-* encapsularla como implementación de `FlightSearchPort`
-
-Debe devolver `NormalizedFlightOffer[]`.
-
-No cambies todavía la experiencia funcional del producto; solo desacopla.
-
----
-
-## FASE 3 — Crear un catálogo de tools inyectable
-
-Quiero reemplazar el patrón de import estático de tools por un servicio inyectable, por ejemplo:
-
-* `TravelToolCatalog`
-
-Ese servicio debe encargarse de construir:
-
-* `getTools(): Record<string, ToolDefinition>`
-* `getToolSchemas()` (si aplica para compatibilidad con `TravelPlannerUseCase`)
-
-### Requisito importante
-
-La tool `search_flights` debe construirse usando `FlightSearchPort`.
-
-Es decir:
-
-* `search_flights.execute(args)` parsea args
-* llama a `flightSearchPort.search(query)`
-* devuelve el array normalizado serializable
-
-Las demás tools (hoteles, reservas, etc.) pueden seguir siendo mock por ahora.
-
----
-
-## FASE 4 — Sustituir dependencias estáticas
-
-Actualiza para que usen el catálogo inyectable en lugar de imports estáticos:
-
-* `GraphExecutor`
-* `TravelPlannerUseCase`
-* cualquier otro consumidor de `travelTools` o schemas
-
-No quiero lógica duplicada ni dos fuentes de verdad si se puede evitar.
-
----
-
-## FASE 5 — Crear el bridge Python para `fli`
-
-Crea la infraestructura específica de `fli` bajo una carpeta como:
-
-* `src/contexts/travel/trip/infrastructure/flights/fli/`
-
-Quiero dos piezas:
-
-### A) `fli_search_bridge.py`
-
-Un script Python pequeño que:
-
-1. recibe JSON de entrada
-2. ejecuta una búsqueda usando `fli`
-3. devuelve JSON de salida
-
-No quiero exponer MCP dentro del ATO.
-Quiero usar `fli` como librería o como mecanismo interno de bridge, no como “protocolo del producto”.
-
-### B) `FliFlightSearchAdapter.ts`
-
-Adaptador TypeScript que implementa `FlightSearchPort`.
-
-Debe:
-
-* invocar el bridge Python con `spawn` o `execFile`
-* manejar timeout
-* parsear stdout
-* validar/sanitizar salida
-* mapear errores a mensajes de dominio razonables:
-
-  * proveedor no disponible
-  * sin resultados
-  * error de formato
-  * timeout
-
-No quiero stack traces crudos escapando al dominio.
-
----
-
-## FASE 6 — Registrar proveedor vía DI / ENV
-
-Quiero que el proveedor de búsqueda de vuelos sea seleccionable por configuración.
-
-Algo como:
-
-* `FLIGHT_SEARCH_PROVIDER=mock`
-* `FLIGHT_SEARCH_PROVIDER=fli`
-
-Debes actualizar el contenedor DI para que:
-
-* use `MockFlightSearchAdapter` si el provider es `mock`
-* use `FliFlightSearchAdapter` si el provider es `fli`
-
-Hazlo siguiendo el patrón del repo.
-
----
-
-## FASE 7 — Mantener compatibilidad con DecisionEngine
-
-No quiero reescribir `DecisionEngine` innecesariamente.
-
-Quiero que adaptes el punto donde hoy se convierten resultados de `search_flights` en opciones rankeables para que:
-
-* siga funcionando el ranking actual
-* use mejor información si está disponible
-* derive `comfortProxy` usando señales como:
-
-  * hora de salida
-  * escalas
-  * duración
-
-No rompas la firma pública de `DecisionEngine.rank()` en esta iteración salvo que sea estrictamente necesario.
-
----
-
-## FASE 8 — Preparar mejor UX sin sobrecargar esta iteración
-
-No quiero una gran refactorización de frontend ahora, pero sí quiero dejar mejores datos disponibles para UI.
-
-En particular, si hoy la selección humana solo usa:
-
-```ts
-{ id, label, priceUsd? }
-```
-
-quiero que la integración deje preparado uno de estos caminos:
-
-### Opción rápida
-
-Densificar `label` para que incluya:
-
-* aerolínea
-* hora salida/llegada
-* escalas
-* precio
-
-### Opción mejor
-
-Añadir metadata opcional para que luego la UI pueda renderizar mejor tarjetas de selección.
-
-No hace falta completar toda la UI ahora, pero sí dejar la base bien orientada.
-
----
-
-## FASE 9 — ToolExecutor y timeouts reales
-
-Hoy las búsquedas reales pueden romper con el timeout actual.
-
-Quiero que revises si `ToolExecutor` necesita:
-
-* timeout configurable por tool
-* o una política distinta para búsquedas lentas
-
-No quiero romper el diseño actual, pero sí evitar que `search_flights` real falle artificialmente por timeouts demasiado agresivos.
-
----
-
-## FASE 10 — Testing mínimo serio
-
-Quiero que la solución quede testeable sin depender de red ni de Python en todos los tests.
-
-### Quiero:
-
-* tests de aplicación usando `MockFlightSearchAdapter`
-* opcionalmente tests de integración separados o claramente marcados para `fli`
-
-No quiero acoplar toda la suite a un proveedor externo frágil.
-
----
-
-# QUÉ NO QUIERO
-
-No quiero que:
-
-* el planner mencione `fli`
-* `GraphExecutor` importe directamente código Python
-* el dominio conozca modelos de `fli`
-* `MockTravelTools.ts` se convierta en un vertedero técnico
-* el sistema pierda su identidad de ATO por meter una librería externa
-
----
-
-# RESULTADO FINAL ESPERADO
-
-La solución final debe sentirse así:
-
-> “No hemos metido una librería de vuelos dentro del proyecto.
-> Hemos añadido una nueva capacidad real del mundo dentro de una arquitectura de operador autónomo.”
-
-Eso es exactamente lo que quiero construir.
-
----
-
-# FORMA DE TRABAJAR
-
-Trabaja en pasos pequeños y seguros.
-
-Antes de tocar archivos:
-
-1. analiza
-2. propone plan concreto
-3. implementa por fases
-4. mantén el sistema compilable en cada etapa
-
-Si detectas una tensión arquitectónica real, explícala antes de resolverla de forma improvisada.
-
-```
-
----
-
-# Mi veredicto: **esto ya está a nivel muy bueno**
-
-Si tu agente implementa esto bien, habrás hecho algo que mucha gente no sabe hacer:
-
-## pasar de
-> “una tool que busca vuelos”
-
-## a
-> “una capacidad operacional enchufable dentro de un sistema autónomo”
-
-Y esa diferencia parece sutil…  
-pero **es exactamente la diferencia entre proyecto curioso y producto serio**.
-
----
-
-Si quieres, ahora sí :contentReference[oaicite:0]{index=0}:
-
-## **la versión todavía más agresiva:**
-### “prompt para que Cursor además convierta esto en una feature visible y espectacular en UI”
-(es decir: que cuando un usuario busque Barcelona → París en Navidad, vea resultados reales y se sienta como si estuviera usando una mezcla de Notion AI + Google Flights + operador premium).
-```
+La app no es “un chat que reserva”: es un **operador de viajes** que **estructura** el viaje en pasos, **proyecta** costes y riesgos, **ejecuta** búsquedas con límites (aprobación, placeholders bloqueados, bloqueo vuelo→hotel), y **mete al humano en el circuito** donde el catálogo y la decisión importan (elección de vuelo y hotel), con **recuperación guiada** cuando algo falla.

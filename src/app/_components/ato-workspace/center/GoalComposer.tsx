@@ -142,6 +142,31 @@ export function GoalComposer({
             <p className="text-sm leading-relaxed text-foreground/90">
               {response?.assistantMessage}
             </p>
+            {response?.recoverySuggestions &&
+              response.recoverySuggestions.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Estrategias rápidas
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {response.recoverySuggestions.map((sug) => (
+                      <button
+                        key={`${sug.kind}-${sug.label}`}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => {
+                          for (const [k, v] of Object.entries(sug.patch)) {
+                            onSlotChange(k, v);
+                          }
+                        }}
+                        className="rounded-full border border-primary/35 bg-primary/5 px-3 py-1.5 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                      >
+                        {sug.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             <div className="grid gap-4 sm:grid-cols-2">
               {slots.map((slot: PlannerMissingSlot) => (
                 <div key={slot.id}>

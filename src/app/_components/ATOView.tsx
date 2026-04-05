@@ -311,6 +311,15 @@ function PendingSelectionsSection({
             className="rounded-lg border border-amber-200 bg-white p-3"
           >
             <p className="text-sm font-medium text-zinc-800">{item.title}</p>
+            {item.selectionKind === "flight" &&
+              item.totalFound !== undefined &&
+              item.totalFound > 0 && (
+                <p className="mt-1 text-xs text-zinc-600">
+                  Hemos encontrado <strong>{item.totalFound}</strong>{" "}
+                  {item.totalFound === 1 ? "opción" : "opciones"}. Estas son las
+                  que mejor encajan contigo.
+                </p>
+              )}
             <div className="mt-2 flex flex-col gap-2">
               {item.options.map((opt) => {
                 const k = `${item.selectionRequestLogicalId}:${opt.id}`;
@@ -327,7 +336,21 @@ function PendingSelectionsSection({
                       Boolean(busyKey) && !loading && "opacity-50",
                     )}
                   >
-                    <span className="font-medium">{opt.label}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{opt.label}</span>
+                      {item.selectionKind === "flight" &&
+                        opt.tags &&
+                        opt.tags[0] && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                            {opt.tags[0]}
+                          </span>
+                        )}
+                    </span>
+                    {opt.rationale && (
+                      <span className="mt-1 block text-[11px] leading-snug text-zinc-600">
+                        {opt.rationale}
+                      </span>
+                    )}
                     {opt.priceUsd !== undefined && (
                       <span className="ml-2 tabular-nums text-zinc-500">
                         ${opt.priceUsd}

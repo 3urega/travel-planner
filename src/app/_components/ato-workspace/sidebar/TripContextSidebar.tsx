@@ -9,6 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
+import type {
+  FlightStopsPreference,
+  FlightTimePreference,
+} from "../hooks/useWorkspaceAgent";
 import { findDecisionForCategory } from "../workflow/deriveWorkflowState";
 import type { WorkspaceWorkflowState } from "../workflow/types";
 import { WORKSPACE_STAGES, stageIndex } from "../workflow/types";
@@ -65,6 +69,10 @@ export function TripContextSidebar({
   onPriceComfortChange,
   maxPriceUsd,
   onMaxPriceChange,
+  flightStopsPreference,
+  onFlightStopsPreferenceChange,
+  flightTimePreference,
+  onFlightTimePreferenceChange,
 }: {
   response: ATOResponse | null;
   workflow: WorkspaceWorkflowState;
@@ -72,6 +80,10 @@ export function TripContextSidebar({
   onPriceComfortChange: (v: number) => void;
   maxPriceUsd: string;
   onMaxPriceChange: (v: string) => void;
+  flightStopsPreference: FlightStopsPreference;
+  onFlightStopsPreferenceChange: (v: FlightStopsPreference) => void;
+  flightTimePreference: FlightTimePreference;
+  onFlightTimePreferenceChange: (v: FlightTimePreference) => void;
 }): React.ReactElement {
   const goal =
     response?.plan.goal ??
@@ -186,6 +198,77 @@ export function TripContextSidebar({
               step={1}
               onValueChange={(v) => onPriceComfortChange(v[0] ?? 40)}
             />
+          </div>
+        </CardContent>
+      </div>
+
+      <div className="ato-noise ato-glass rounded-2xl">
+        <CardHeader className="pb-2">
+          <span className="ato-kicker mb-1">Vuelo</span>
+          <CardTitle className="font-ato-display normal-case tracking-normal text-lg font-medium text-foreground">
+            Preferencias de cabina y horario
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Escalas
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  { id: "any" as const, label: "Cualquiera" },
+                  { id: "nonstop" as const, label: "Solo directo" },
+                  { id: "one_stop" as const, label: "Hasta 1 escala" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => onFlightStopsPreferenceChange(opt.id)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors",
+                    flightStopsPreference === opt.id
+                      ? "border-primary-border bg-primary-subtle text-foreground"
+                      : "border-border bg-background text-muted-foreground hover:border-primary-border hover:bg-primary-subtle/50",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Franja de salida
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  { id: "any" as const, label: "Sin preferencia" },
+                  { id: "morning" as const, label: "Mañana" },
+                  { id: "afternoon" as const, label: "Tarde" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => onFlightTimePreferenceChange(opt.id)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors",
+                    flightTimePreference === opt.id
+                      ? "border-primary-border bg-primary-subtle text-foreground"
+                      : "border-border bg-background text-muted-foreground hover:border-primary-border hover:bg-primary-subtle/50",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+              Se aplican en la próxima búsqueda y al re-rankear la shortlist
+              (peso suave en franja horaria).
+            </p>
           </div>
         </CardContent>
       </div>

@@ -32,6 +32,88 @@ function applyInferredCitiesToFlightSteps(
   }
 }
 
+function firstGatheredValue(
+  gathered: Record<string, string>,
+  keys: string[],
+): string | undefined {
+  for (const k of keys) {
+    const v = gathered[k]?.trim();
+    if (v) return v;
+  }
+  return undefined;
+}
+
+/**
+ * Aplica slots ya recogidos (POST / recuperación). `recovery_*` siempre gana sobre lo que puso el LLM.
+ */
+function applyGatheredSlotsToFlightSteps(
+  steps: PlanStep[],
+  gathered?: Record<string, string>,
+): void {
+  if (!gathered || Object.keys(gathered).length === 0) return;
+
+  const recoveryOrigin = firstGatheredValue(gathered, ["recovery_origin"]);
+  const recoveryDest = firstGatheredValue(gathered, ["recovery_destination"]);
+  const plainOrigin = firstGatheredValue(gathered, ["origin"]);
+  const plainDest = firstGatheredValue(gathered, ["destination"]);
+
+  for (const s of steps) {
+    if (s.type !== "search_flights") continue;
+    const args = s.args as Record<string, unknown>;
+
+    if (recoveryOrigin) {
+      args.from = recoveryOrigin;
+    } else if (plainOrigin) {
+      const fromRaw = String(args.from ?? "").trim();
+      if (isPlaceholderRouteToken(fromRaw)) {
+        args.from = plainOrigin;
+      }
+    }
+
+    if (recoveryDest) {
+      args.to = recoveryDest;
+    } else if (plainDest) {
+      const toRaw = String(args.to ?? "").trim();
+      if (isPlaceholderRouteToken(toRaw)) {
+        args.to = plainDest;
+      }
+    }
+
+    const recoveryDate = firstGatheredValue(gathered, [
+      "recovery_outbound",
+      "outbound",
+      "outbound_date",
+    ]);
+    if (
+      recoveryDate &&
+      /^\d{4}-\d{2}-\d{2}$/.test(recoveryDate.trim())
+    ) {
+      args.date = recoveryDate.trim();
+    }
+
+    const allowConn = firstGatheredValue(gathered, [
+      "recovery_allow_connections",
+    ]);
+    if (allowConn === "yes" || allowConn === "1") {
+      args.non_stop = false;
+    }
+  }
+}
+
+function gatherHintsForRouteInference(
+  gathered?: Record<string, string>,
+): string[] {
+  if (!gathered || Object.keys(gathered).length === 0) return [];
+  const out: string[] = [];
+  const ro =
+    firstGatheredValue(gathered, ["recovery_origin", "origin"]);
+  const rd =
+    firstGatheredValue(gathered, ["recovery_destination", "destination"]);
+  if (ro) out.push(`Origen confirmado: ${ro}`);
+  if (rd) out.push(`Destino confirmado: ${rd}`);
+  return out;
+}
+
 /** Cada `search_hotels` debe depender (transitivamente) de algún `search_flights`. */
 function flightHotelDependencyValid(steps: TravelPlanDraftStep[]): boolean {
   const flightIds = new Set(
@@ -83,6 +165,8 @@ function dependsOnReferencesAreValid(
 export type PlanFromValidatedDraftOptions = {
   /** Narrativa original; si el LLM deja `Origin`/`Destination`, se infiere ruta desde aquí + goal */
   routeInferenceText?: string;
+  /** Slots del usuario (p. ej. recovery_origin); se fusionan en `search_flights` tras la inferencia por texto */
+  gatheredSlots?: Record<string, string>;
 };
 
 /**
@@ -103,6 +187,7 @@ export function planFromValidatedDraftBody(
 
   const routeInferenceSource = [
     options?.routeInferenceText?.trim(),
+    ...gatherHintsForRouteInference(options?.gatheredSlots),
     goal.trim(),
   ]
     .filter((s): s is string => typeof s === "string" && s.length > 0)
@@ -127,6 +212,7 @@ export function planFromValidatedDraftBody(
     steps,
     routeInferenceSource.length > 0 ? routeInferenceSource : goal.trim(),
   );
+  applyGatheredSlotsToFlightSteps(steps, options?.gatheredSlots);
 
   const plan: Plan = {
     id: crypto.randomUUID(),

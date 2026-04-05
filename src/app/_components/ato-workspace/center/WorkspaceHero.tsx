@@ -45,9 +45,16 @@ function heroCopy(
 
   if (stage === "select_flight") {
     const sel = response?.pendingSelections?.[0];
+    const totalFound =
+      sel?.selectionKind === "flight" ? sel.totalFound : undefined;
+    const intro =
+      totalFound !== undefined && totalFound > 0
+        ? `Hemos encontrado ${totalFound} ${totalFound === 1 ? "opción" : "opciones"}; aquí van las que mejor encajan. `
+        : "";
     return {
       title: sel?.title ?? "Las mejores formas de llegar",
       subtitle:
+        intro +
         "Pocas opciones, bien curadas. Elige con claridad; el resto del itinerario se alinea a tu vuelo.",
       badge: "Vuelo",
     };

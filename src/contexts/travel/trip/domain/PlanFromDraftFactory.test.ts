@@ -170,6 +170,89 @@ describe("planFromValidatedDraftBody", () => {
     expect(r?.kind).toBe("plan");
   });
 
+  it("aplica recovery_origin cuando el LLM deja from=Origin", () => {
+    const r = planFromValidatedDraftBody(
+      sessionId,
+      {
+        goal: "Navidades",
+        steps: [
+          {
+            id: "sf",
+            type: "search_flights",
+            description: "vuelos",
+            dependsOn: [],
+            args: {
+              from: "Origin",
+              to: "hamburgo",
+              date: "2026-12-20",
+            },
+            approvalRequired: false,
+          },
+          {
+            id: "sh",
+            type: "search_hotels",
+            description: "h",
+            dependsOn: ["sf"],
+            args: {
+              city: "hamburgo",
+              check_in: "2026-12-20",
+              check_out: "2026-12-30",
+            },
+            approvalRequired: false,
+          },
+        ],
+      },
+      {
+        routeInferenceText: "salgo de Barcelona",
+        gatheredSlots: { recovery_origin: "BCN" },
+      },
+    );
+    expect(r?.kind).toBe("plan");
+    if (r?.kind !== "plan") return;
+    const sf = r.plan.steps.find((s) => s.type === "search_flights");
+    expect(sf?.args.from).toBe("BCN");
+  });
+
+  it("recovery_destination sobrescribe to aunque el LLM pusiera otro valor", () => {
+    const r = planFromValidatedDraftBody(
+      sessionId,
+      {
+        goal: "Viaje",
+        steps: [
+          {
+            id: "sf",
+            type: "search_flights",
+            description: "vuelos",
+            dependsOn: [],
+            args: {
+              from: "BCN",
+              to: "hamburgo",
+              date: "2026-12-20",
+            },
+            approvalRequired: false,
+          },
+          {
+            id: "sh",
+            type: "search_hotels",
+            description: "h",
+            dependsOn: ["sf"],
+            args: {
+              city: "X",
+              check_in: "2026-12-20",
+              check_out: "2026-12-30",
+            },
+            approvalRequired: false,
+          },
+        ],
+      },
+      { gatheredSlots: { recovery_destination: "HAM" } },
+    );
+    expect(r?.kind).toBe("plan");
+    if (r?.kind !== "plan") return;
+    const sf = r.plan.steps.find((s) => s.type === "search_flights");
+    expect(sf?.args.to).toBe("HAM");
+  });
+
   it("devuelve null si hay ids duplicados", () => {
     const r = planFromValidatedDraftBody(sessionId, {
       goal: "X",

@@ -9,6 +9,7 @@ import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ATOResponse } from "@/contexts/travel/trip/domain/ATOResponse";
 import type { PendingSelectionItem } from "@/contexts/travel/trip/domain/GraphExecutionCheckpoint";
 import type { DecisionRecord } from "@/contexts/travel/trip/domain/DecisionRecord";
+import type { FlightRefinementFilters } from "@/contexts/travel/trip/application/flights/flightRefinementTypes";
 import { cn } from "@/lib/utils";
 
 import { findDecisionForCategory } from "../workflow/deriveWorkflowState";
@@ -36,12 +37,18 @@ export function OptionsStage({
   response,
   busyKey,
   onSelectOption,
+  onRefineFlight,
   filterKind = null,
   showDecisionMemorial = true,
 }: {
   response: ATOResponse | null;
   busyKey: string | null;
   onSelectOption: (item: PendingSelectionItem, optionId: string) => void;
+  /** Re-cura la shortlist de vuelos desde el cache del grafo (sin nueva búsqueda). */
+  onRefineFlight?: (
+    item: PendingSelectionItem,
+    filters: FlightRefinementFilters,
+  ) => void;
   /** Si se define, solo se muestran pendientes de ese tipo (alineado a la etapa activa). */
   filterKind?: "flight" | "hotel" | null;
   showDecisionMemorial?: boolean;
@@ -105,6 +112,18 @@ export function OptionsStage({
                         <p className="mt-1 text-sm text-muted-foreground">
                           {item.title}
                         </p>
+                        {item.selectionKind === "flight" &&
+                          item.totalFound !== undefined &&
+                          item.totalFound > 0 && (
+                            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-foreground/85">
+                              Hemos encontrado{" "}
+                              <span className="font-semibold text-primary">
+                                {item.totalFound}
+                              </span>{" "}
+                              {item.totalFound === 1 ? "opción" : "opciones"}.
+                              Estas son las que mejor encajan contigo.
+                            </p>
+                          )}
                         {rec && (
                           <p className="mt-2 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                             <span className="font-medium text-primary">
@@ -121,6 +140,85 @@ export function OptionsStage({
                       Elige con intención — el plan sigue en silencio hasta tu
                       voto
                     </p>
+                    {item.selectionKind === "flight" &&
+                      onRefineFlight &&
+                      response?.adgGraphVersionId && (
+                        <div className="space-y-2 rounded-xl border border-border/70 bg-card-elevated/40 px-3 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            Afinar shortlist
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={Boolean(busyKey)}
+                              onClick={() =>
+                                onRefineFlight(item, { maxStops: 0 })
+                              }
+                              className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary-border hover:bg-primary-subtle disabled:opacity-50"
+                            >
+                              Solo directos
+                            </button>
+                            <button
+                              type="button"
+                              disabled={Boolean(busyKey)}
+                              onClick={() =>
+                                onRefineFlight(item, { maxStops: 2 })
+                              }
+                              className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary-border hover:bg-primary-subtle disabled:opacity-50"
+                            >
+                              Hasta 2 escalas
+                            </button>
+                            <button
+                              type="button"
+                              disabled={Boolean(busyKey)}
+                              onClick={() =>
+                                onRefineFlight(item, { preferMorning: true })
+                              }
+                              className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary-border hover:bg-primary-subtle disabled:opacity-50"
+                            >
+                              Salida mañana
+                            </button>
+                            <button
+                              type="button"
+                              disabled={Boolean(busyKey)}
+                              onClick={() =>
+                                onRefineFlight(item, { preferAfternoon: true })
+                              }
+                              className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary-border hover:bg-primary-subtle disabled:opacity-50"
+                            >
+                              Salida tarde
+                            </button>
+                            <button
+                              type="button"
+                              disabled={Boolean(busyKey)}
+                              onClick={() => {
+                                const prices =
+                                  decision?.options.map((o) => o.price) ?? [];
+                                const minP =
+                                  prices.length > 0 ? Math.min(...prices) : 0;
+                                const cap =
+                                  minP > 0
+                                    ? Math.max(80, Math.round(minP * 0.92))
+                                    : undefined;
+                                if (cap !== undefined) {
+                                  onRefineFlight(item, { maxPriceUsd: cap });
+                                }
+                              }}
+                              className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-primary-border hover:bg-primary-subtle disabled:opacity-50"
+                            >
+                              Más barato
+                            </button>
+                            <button
+                              type="button"
+                              disabled={Boolean(busyKey)}
+                              onClick={() => onRefineFlight(item, {})}
+                              className="rounded-full border border-dashed border-muted-foreground/40 bg-muted/30 px-3 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary-border hover:bg-primary-subtle disabled:opacity-50"
+                            >
+                              Quitar filtros
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     <motion.div
                       className="grid gap-3 sm:grid-cols-2"
                       variants={listVariants}
@@ -163,12 +261,27 @@ export function OptionsStage({
                               <span className="font-ato-display text-lg font-medium leading-snug text-foreground">
                                 {opt.label}
                               </span>
+                              {item.selectionKind === "flight" &&
+                                opt.tags &&
+                                opt.tags[0] && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="border border-primary/35 bg-primary/5 text-[10px] font-medium text-primary"
+                                  >
+                                    {opt.tags[0]}
+                                  </Badge>
+                                )}
                               {isRecommended && (
                                 <Badge variant="accent" className="text-[10px]">
                                   Recomendado
                                 </Badge>
                               )}
                             </div>
+                            {opt.rationale && (
+                              <p className="text-xs leading-relaxed text-muted-foreground">
+                                {opt.rationale}
+                              </p>
+                            )}
                             {opt.priceUsd !== undefined && (
                               <span className="tabular-nums text-sm font-medium text-primary">
                                 Desde ${opt.priceUsd}

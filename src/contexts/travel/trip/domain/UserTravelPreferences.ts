@@ -1,5 +1,8 @@
 import type { DecisionWeights } from "./DecisionRecord";
 
+/** Preferencia de escalas para curación de shortlist (persistida en sesión). */
+export type FlightStopsPreferenceInput = "any" | "nonstop" | "one_stop";
+
 /**
  * Preferencias opcionales enviadas desde la UI (POST /api/agent).
  */
@@ -8,11 +11,18 @@ export type UserTravelPreferences = {
   /** 0–1: importancia relativa del precio frente al confort. */
   priceWeight?: number;
   comfortWeight?: number;
+  /** Máximo de escalas (API / avanzado); la UI suele mandar {@link flightStopsPreference}. */
+  flightMaxStops?: number;
+  flightStopsPreference?: FlightStopsPreferenceInput;
+  /** Preferencia suave de franja de salida para la shortlist de vuelos. */
+  flightTimeBand?: "any" | "morning" | "afternoon";
 };
 
 export type ResolvedUserTravelPreferences = {
   maxPriceUsd?: number;
   weights: DecisionWeights;
+  flightMaxStops?: number;
+  flightTimeBand?: "morning" | "afternoon";
 };
 
 function readNum(v: unknown): number | undefined {
@@ -55,10 +65,44 @@ export function normalizeUserTravelPreferences(
       ? maxRaw
       : undefined;
 
+  let flightMaxStops: number | undefined;
+  if (input?.flightStopsPreference === "nonstop") flightMaxStops = 0;
+  else if (input?.flightStopsPreference === "one_stop") flightMaxStops = 1;
+  else if (input?.flightStopsPreference === "any") flightMaxStops = undefined;
+  else {
+    const flightMaxStopsRaw = input?.flightMaxStops;
+    flightMaxStops =
+      flightMaxStopsRaw !== undefined &&
+      Number.isFinite(Number(flightMaxStopsRaw)) &&
+      Number(flightMaxStopsRaw) >= 0
+        ? Math.floor(Number(flightMaxStopsRaw))
+        : undefined;
+  }
+
+  const bandRaw = input?.flightTimeBand;
+  const flightTimeBand =
+    bandRaw === "morning" || bandRaw === "afternoon" ? bandRaw : undefined;
+
   return {
     maxPriceUsd,
     weights: { price, comfort },
+    ...(flightMaxStops !== undefined ? { flightMaxStops } : {}),
+    ...(flightTimeBand !== undefined ? { flightTimeBand } : {}),
   };
+}
+
+function readFlightTimeBand(
+  v: unknown,
+): "any" | "morning" | "afternoon" | undefined {
+  if (v === "morning" || v === "afternoon" || v === "any") return v;
+  return undefined;
+}
+
+function readFlightStopsPreference(
+  v: unknown,
+): FlightStopsPreferenceInput | undefined {
+  if (v === "any" || v === "nonstop" || v === "one_stop") return v;
+  return undefined;
 }
 
 /**
@@ -73,6 +117,15 @@ export function mergeUserTravelPreferences(
     maxPriceUsd: incoming?.maxPriceUsd ?? readNum(existing?.maxPriceUsd),
     priceWeight: incoming?.priceWeight ?? readNum(existing?.priceWeight),
     comfortWeight: incoming?.comfortWeight ?? readNum(existing?.comfortWeight),
+    flightStopsPreference:
+      incoming?.flightStopsPreference ??
+      readFlightStopsPreference(existing?.flightStopsPreference),
+    flightMaxStops:
+      incoming?.flightMaxStops ??
+      readNum(existing?.flightMaxStops as unknown),
+    flightTimeBand:
+      incoming?.flightTimeBand ??
+      readFlightTimeBand(existing?.flightTimeBand),
   };
   return normalizeUserTravelPreferences(merged);
 }

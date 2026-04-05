@@ -8,6 +8,10 @@ export type ScoredOption = {
   comfortScore: number;
   totalScore: number;
   chosen: boolean;
+  /** Texto corto para la UI (p. ej. vuelos curados). */
+  rationale?: string;
+  /** Etiquetas para badges (p. ej. "Más barato"). */
+  tags?: string[];
 };
 
 export type DecisionWeights = {

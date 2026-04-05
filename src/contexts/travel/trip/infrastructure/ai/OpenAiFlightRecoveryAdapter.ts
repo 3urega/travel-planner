@@ -1,11 +1,14 @@
 import { Service } from "diod";
 
-import { buildDeterministicFlightRecoveryNeedInput } from "../../domain/flightRecoveryFallback";
+import {
+  buildDeterministicFlightRecoveryNeedInput,
+  buildDeterministicRecoverySuggestions,
+} from "../../domain/flightRecoveryFallback";
 import {
   FlightRecoveryPort,
   type FlightRecoveryContext,
+  type FlightRecoveryNeedInputResult,
 } from "../../domain/FlightRecoveryPort";
-import type { PlannerMissingSlot } from "../../domain/PlannerResult";
 import { OpenAIClient } from "./OpenAIClient";
 import { FLIGHT_RECOVERY_SYSTEM_PROMPT } from "./planner/flightRecoveryPrompts";
 import { flightRecoveryNeedInputSchema } from "./planner/plannerDraftSchemas";
@@ -18,7 +21,7 @@ export class OpenAiFlightRecoveryAdapter extends FlightRecoveryPort {
 
   override async requestNeedInputAfterFlightFailure(
     ctx: FlightRecoveryContext,
-  ): Promise<{ assistantMessage: string; missingSlots: PlannerMissingSlot[] }> {
+  ): Promise<FlightRecoveryNeedInputResult> {
     try {
       const fromLLm = await this.tryLlm(ctx);
       if (fromLLm) return fromLLm;
@@ -30,7 +33,7 @@ export class OpenAiFlightRecoveryAdapter extends FlightRecoveryPort {
 
   private async tryLlm(
     ctx: FlightRecoveryContext,
-  ): Promise<{ assistantMessage: string; missingSlots: PlannerMissingSlot[] } | null> {
+  ): Promise<FlightRecoveryNeedInputResult | null> {
     const client = this.openAIClient.get();
     const model = this.openAIClient.getModel();
 
@@ -71,9 +74,20 @@ export class OpenAiFlightRecoveryAdapter extends FlightRecoveryPort {
     const validated = flightRecoveryNeedInputSchema.safeParse(parsed);
     if (!validated.success) return null;
 
+    const deterministic = buildDeterministicRecoverySuggestions(ctx);
+    const fromModel = validated.data.suggestions?.map((s) => ({
+      kind: s.kind,
+      label: s.label,
+      patch: s.patch ?? {},
+    }));
+
     return {
       assistantMessage: validated.data.assistantMessage,
       missingSlots: validated.data.missingSlots,
+      suggestions:
+        fromModel && fromModel.length > 0
+          ? fromModel.slice(0, 3)
+          : deterministic,
     };
   }
 }

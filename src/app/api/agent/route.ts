@@ -26,14 +26,38 @@ function parsePreferences(raw: unknown): UserTravelPreferences | undefined {
     typeof o.comfortWeight === "number" && Number.isFinite(o.comfortWeight)
       ? Math.max(0, Math.min(1, o.comfortWeight))
       : undefined;
-  if (
-    maxPriceUsd === undefined &&
-    priceWeight === undefined &&
-    comfortWeight === undefined
-  ) {
-    return undefined;
+  const flightMaxStops =
+    typeof o.flightMaxStops === "number" &&
+    Number.isFinite(o.flightMaxStops) &&
+    o.flightMaxStops >= 0
+      ? Math.floor(o.flightMaxStops)
+      : undefined;
+  const flightStopsPrefRaw = o.flightStopsPreference;
+  const flightStopsPreference =
+    flightStopsPrefRaw === "any" ||
+    flightStopsPrefRaw === "nonstop" ||
+    flightStopsPrefRaw === "one_stop"
+      ? flightStopsPrefRaw
+      : undefined;
+  const flightTimeBandRaw = o.flightTimeBand;
+  const flightTimeBand =
+    flightTimeBandRaw === "morning" ||
+    flightTimeBandRaw === "afternoon" ||
+    flightTimeBandRaw === "any"
+      ? flightTimeBandRaw
+      : undefined;
+
+  const merged: UserTravelPreferences = {};
+  if (maxPriceUsd !== undefined) merged.maxPriceUsd = maxPriceUsd;
+  if (priceWeight !== undefined) merged.priceWeight = priceWeight;
+  if (comfortWeight !== undefined) merged.comfortWeight = comfortWeight;
+  if (flightMaxStops !== undefined) merged.flightMaxStops = flightMaxStops;
+  if (flightStopsPreference !== undefined) {
+    merged.flightStopsPreference = flightStopsPreference;
   }
-  return { maxPriceUsd, priceWeight, comfortWeight };
+  if (flightTimeBand !== undefined) merged.flightTimeBand = flightTimeBand;
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
